@@ -80,6 +80,9 @@ app.post('/api/webhook', async (req, res) => {
                             } else {
                                 await sendPrivateReply(commentId, matchedRule.response_message);
                             }
+                            
+                            // Track DM sent
+                            await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
                         }
                     }
                 });
@@ -121,6 +124,9 @@ app.post('/api/webhook', async (req, res) => {
                                     } else {
                                         await sendMessage(senderId, rule.response_message);
                                     }
+                                    
+                                    // Track Click
+                                    await db.query('UPDATE rules SET clicks = clicks + 1 WHERE id = $1', [rule.id]);
                                 }
                             }
                         }
@@ -185,6 +191,15 @@ app.get('/api/analytics', async (req, res) => {
                 avgEngagement: posts.length > 0 ? ((totalLikes + totalComments) / posts.length).toFixed(1) : 0
             }
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const result = await db.query('SELECT SUM(dms_sent) as total_dms FROM rules');
+        res.json({ total_dms: parseInt(result.rows[0].total_dms) || 0, limit: 500 });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

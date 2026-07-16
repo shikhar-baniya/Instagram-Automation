@@ -1,7 +1,19 @@
 import { NavLink } from 'react-router-dom';
 import { Home, Zap, FileJson, MessageSquare, BarChart, HelpCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export default function Sidebar() {
+  const [stats, setStats] = useState({ total_dms: 0, limit: 500 });
+
+  useEffect(() => {
+    axios.get(`${API_BASE}/stats`).then(res => {
+      setStats(res.data);
+    }).catch(err => console.error("Failed to load stats", err));
+  }, []);
+
   const navItems = [
     { icon: Home, label: 'Home', path: '/' },
     { icon: Zap, label: 'Automations', path: '/automations' },
@@ -48,6 +60,16 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-border mt-auto">
+        <div className="mb-4">
+          <div className="flex justify-between items-end mb-1">
+            <span className="text-sm text-text-secondary font-medium">DMs sent</span>
+            <span className="text-sm font-bold">{stats.total_dms}/{stats.limit}</span>
+          </div>
+          <div className="w-full bg-gray-800 rounded-full h-1.5">
+            <div className="bg-accent h-1.5 rounded-full" style={{ width: `${Math.min((stats.total_dms / stats.limit) * 100, 100)}%` }}></div>
+          </div>
+        </div>
+
         <button className="flex items-center gap-3 px-4 py-2 w-full text-text-secondary hover:text-white transition-colors text-sm">
           <HelpCircle size={18} />
           Support

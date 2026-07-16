@@ -32,8 +32,16 @@ async function initDB() {
                     main_button_text TEXT,
                     main_button_url TEXT,
                     public_reply_text TEXT,
+                    dms_sent INTEGER DEFAULT 0,
+                    clicks INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+            `);
+            
+            // Add new columns to existing databases if they don't exist
+            await pool.query(`
+                ALTER TABLE rules ADD COLUMN IF NOT EXISTS dms_sent INTEGER DEFAULT 0;
+                ALTER TABLE rules ADD COLUMN IF NOT EXISTS clicks INTEGER DEFAULT 0;
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {

@@ -162,9 +162,13 @@ export default function Home() {
                         </div>
                       </div>
                     </td>
-                    <td className="p-4 text-center font-bold">{rule.is_active ? Math.floor(Math.random() * 50) + 10 : 0}</td>
-                    <td className="p-4 text-center font-bold">{rule.is_active ? Math.floor(Math.random() * 80) + 20 : 0}</td>
-                    <td className="p-4 text-center font-bold text-accent">{rule.is_active ? '100%' : '—'}</td>
+                    <td className="p-4 text-center font-bold">{rule.dms_sent || 0}</td>
+                    <td className="p-4 text-center font-bold">{rule.clicks || 0}</td>
+                    <td className="p-4 text-center">
+                      <div className="inline-block px-2 py-1 rounded bg-green-500/20 text-green-400 font-medium text-xs">
+                        {rule.dms_sent ? ((rule.clicks || 0) / rule.dms_sent * 100).toFixed(1) : 0}%
+                      </div>
+                    </td>
                     <td className="p-4 text-center">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${rule.is_active ? 'bg-accent/20 text-accent' : 'bg-gray-800 text-gray-400'}`}>
                         {rule.is_active ? 'Live' : 'Paused'}
