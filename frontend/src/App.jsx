@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Sidebar from './components/Sidebar';
 import Home from './pages/Home';
 import AutomationEditor from './pages/AutomationEditor';
+import Analytics from './pages/Analytics';
 import './index.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/new-automation" element={<AutomationEditor />} />
             <Route path="/edit-automation/:id" element={<AutomationEditor />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

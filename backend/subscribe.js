@@ -2,7 +2,7 @@ require('dotenv').config();
 const axios = require('axios');
 
 const TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const API = 'https://graph.instagram.com/v20.0';
+const API = 'https://graph.instagram.com/v25.0';
 
 async function subscribeApp() {
     try {

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Smartphone, Check, ArrowLeft, Image as ImageIcon, X } from 'lucide-react';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export default function AutomationEditor() {
   const { id } = useParams();

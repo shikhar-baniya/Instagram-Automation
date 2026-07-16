@@ -41,7 +41,7 @@ async function getRecentPosts() {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/media`;
         const response = await axios.get(url, {
             params: {
-                fields: 'id,caption,media_url,media_type,timestamp,permalink,thumbnail_url',
+                fields: 'id,caption,media_url,media_type,timestamp,permalink,thumbnail_url,like_count,comments_count',
                 access_token: PAGE_ACCESS_TOKEN
             }
         });
@@ -190,4 +190,21 @@ async function replyToComment(commentId, messageText) {
     }
 }
 
-module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, checkFollowStatus, replyToComment };
+async function getUserProfile() {
+    if (!PAGE_ACCESS_TOKEN) return null;
+    try {
+        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me`;
+        const response = await axios.get(url, {
+            params: {
+                fields: 'id,username,followers_count,media_count,profile_picture_url',
+                access_token: PAGE_ACCESS_TOKEN
+            }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching user profile:', error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, checkFollowStatus, replyToComment, getUserProfile };

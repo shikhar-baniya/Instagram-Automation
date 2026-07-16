@@ -162,6 +162,34 @@ app.get('/api/media', async (req, res) => {
     }
 });
 
+app.get('/api/analytics', async (req, res) => {
+    try {
+        const { getUserProfile } = require('./instagram');
+        const profile = await getUserProfile();
+        const posts = await getRecentPosts();
+        
+        // Calculate basic engagement metrics
+        let totalLikes = 0;
+        let totalComments = 0;
+        posts.forEach(post => {
+            totalLikes += (post.like_count || 0);
+            totalComments += (post.comments_count || 0);
+        });
+
+        res.json({
+            profile: profile || { followers_count: 0, media_count: 0, username: 'Unknown' },
+            posts: posts.slice(0, 10), // Return top 10 for charts
+            metrics: {
+                totalLikes,
+                totalComments,
+                avgEngagement: posts.length > 0 ? ((totalLikes + totalComments) / posts.length).toFixed(1) : 0
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/rules', async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM rules ORDER BY created_at DESC');
