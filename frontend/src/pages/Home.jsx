@@ -13,7 +13,18 @@ export default function Home() {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(pollRules, 5000);
+    return () => clearInterval(interval);
   }, []);
+
+  const pollRules = async () => {
+    try {
+      const rulesRes = await axios.get(`${API_BASE}/rules`);
+      setRules(rulesRes.data || []);
+    } catch (error) {
+      console.error('Failed to poll rules', error);
+    }
+  };
 
   const fetchData = async () => {
     try {

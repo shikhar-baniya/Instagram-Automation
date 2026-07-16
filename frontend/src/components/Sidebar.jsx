@@ -9,9 +9,15 @@ export default function Sidebar() {
   const [stats, setStats] = useState({ total_dms: 0, limit: 500 });
 
   useEffect(() => {
-    axios.get(`${API_BASE}/stats`).then(res => {
-      setStats(res.data);
-    }).catch(err => console.error("Failed to load stats", err));
+    const fetchStats = () => {
+      axios.get(`${API_BASE}/stats`).then(res => {
+        setStats(res.data);
+      }).catch(err => console.error("Failed to load stats", err));
+    };
+    
+    fetchStats();
+    const interval = setInterval(fetchStats, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const navItems = [
