@@ -36,19 +36,39 @@ async function sendPrivateReply(commentId, messageText) {
 
 async function getRecentPosts() {
     if (!PAGE_ACCESS_TOKEN) return [];
-    
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/media`;
         const response = await axios.get(url, {
             params: {
                 fields: 'id,caption,media_url,media_type,timestamp,permalink,thumbnail_url,like_count,comments_count',
-                access_token: PAGE_ACCESS_TOKEN
+                access_token: PAGE_ACCESS_TOKEN,
+                limit: 25
             }
         });
         return response.data.data;
     } catch (error) {
         console.error('Error fetching recent posts:', error.response ? error.response.data : error.message);
         return [];
+    }
+}
+
+async function getPaginatedPosts(afterCursor) {
+    if (!PAGE_ACCESS_TOKEN) return { data: [], paging: {} };
+    try {
+        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/media`;
+        const params = {
+            fields: 'id,caption,media_url,media_type,timestamp,permalink,thumbnail_url,like_count,comments_count',
+            access_token: PAGE_ACCESS_TOKEN,
+            limit: 25
+        };
+        if (afterCursor) {
+            params.after = afterCursor;
+        }
+        const response = await axios.get(url, { params });
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching paginated posts:', error.response ? error.response.data : error.message);
+        return { data: [], paging: {} };
     }
 }
 
@@ -207,4 +227,4 @@ async function getUserProfile() {
     }
 }
 
-module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, checkFollowStatus, replyToComment, getUserProfile };
+module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile };

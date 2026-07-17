@@ -12,6 +12,8 @@ export default function AutomationEditor() {
   const preselectPostId = location.state?.preselectPostId;
 
   const [posts, setPosts] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showAllPostsModal, setShowAllPostsModal] = useState(false);
   const [formData, setFormData] = useState({
     target_post_type: preselectPostId ? 'specific' : 'any',
@@ -34,12 +36,23 @@ export default function AutomationEditor() {
     }
   }, [id]);
 
-  const fetchPosts = async () => {
+  const fetchPosts = async (after = null) => {
     try {
-      const res = await axios.get(`${API_BASE}/media`);
-      setPosts(res.data || []);
+      if (after) setLoadingMore(true);
+      const url = after ? `${API_BASE}/media?after=${after}` : `${API_BASE}/media`;
+      const res = await axios.get(url);
+      
+      if (after) {
+        setPosts(prev => [...prev, ...(res.data.data || [])]);
+      } else {
+        setPosts(res.data.data || []);
+      }
+      
+      setNextCursor(res.data.paging?.cursors?.after || null);
     } catch (error) {
       console.error('Failed to fetch media', error);
+    } finally {
+      if (after) setLoadingMore(false);
     }
   };
 
@@ -545,6 +558,18 @@ export default function AutomationEditor() {
                   )
                 })}
               </div>
+              
+              {nextCursor && (
+                <div className="mt-8 flex justify-center">
+                  <button 
+                    onClick={() => fetchPosts(nextCursor)}
+                    disabled={loadingMore}
+                    className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-lg font-medium transition-colors disabled:opacity-50"
+                  >
+                    {loadingMore ? 'Loading...' : 'Load More Posts'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

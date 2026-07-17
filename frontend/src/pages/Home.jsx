@@ -33,7 +33,7 @@ export default function Home() {
         axios.get(`${API_BASE}/media`),
         axios.get(`${API_BASE}/rules`)
       ]);
-      setPosts(mediaRes.data || []);
+      setPosts(mediaRes.data.data || []);
       setRules(rulesRes.data || []);
     } catch (error) {
       console.error('Failed to fetch data', error);

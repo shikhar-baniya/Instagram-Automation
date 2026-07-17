@@ -161,8 +161,10 @@ app.get('/api/webhook', (req, res) => {
 
 app.get('/api/media', async (req, res) => {
     try {
-        const posts = await getRecentPosts();
-        res.json(posts);
+        const { getPaginatedPosts } = require('./instagram');
+        const after = req.query.after;
+        const postsData = await getPaginatedPosts(after);
+        res.json(postsData);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
