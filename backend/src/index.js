@@ -31,7 +31,7 @@ app.post('/api/webhook', async (req, res) => {
                         console.log(`Received comment: ${commentText} on media: ${mediaId}`);
 
                         // Find matching rule
-                        const result = await db.query('SELECT * FROM rules WHERE is_active = true');
+                        const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = $1', ['post_comment']);
                         const rules = result.rows;
                         let matchedRule = null;
 
@@ -88,14 +88,58 @@ app.post('/api/webhook', async (req, res) => {
                 });
             }
 
-            // Handle Direct Messages (like Button taps / Quick Replies)
+            // Handle Direct Messages (like Button taps / Quick Replies / DM Keywords / Story Replies)
             if (entry.messaging) {
                 entry.messaging.forEach(async function(messagingEvent) {
                     let payload = null;
+                    let messageText = null;
+                    let isStoryReply = false;
+
                     if (messagingEvent.postback && messagingEvent.postback.payload) {
                         payload = messagingEvent.postback.payload; // Button Template click
                     } else if (messagingEvent.message && messagingEvent.message.quick_reply) {
                         payload = messagingEvent.message.quick_reply.payload; // Legacy Quick Reply click
+                    } else if (messagingEvent.message && messagingEvent.message.text) {
+                        messageText = messagingEvent.message.text;
+                        isStoryReply = !!(messagingEvent.message.reply_to && messagingEvent.message.reply_to.story);
+                    }
+
+                    if (messageText) {
+                        const senderId = messagingEvent.sender.id;
+                        const triggerType = isStoryReply ? 'story_reply' : 'dm_keyword';
+                        console.log(`Received message: ${messageText} from ${senderId}, triggerType: ${triggerType}`);
+
+                        const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = $1', [triggerType]);
+                        const rules = result.rows;
+                        let matchedRule = null;
+
+                        for (const rule of rules) {
+                            if (isStoryReply && rule.target_story_type !== 'any') {
+                                // Specific story matching requires fetching story ID, skipping for MVP
+                                continue;
+                            }
+
+                            if (rule.match_type === 'any') {
+                                matchedRule = rule;
+                                break;
+                            } else if (rule.match_type === 'exact' && messageText.trim().toLowerCase() === rule.trigger_keyword.toLowerCase()) {
+                                matchedRule = rule;
+                                break;
+                            } else if (rule.match_type === 'partial' && messageText.toLowerCase().includes(rule.trigger_keyword.toLowerCase())) {
+                                matchedRule = rule;
+                                break;
+                            }
+                        }
+
+                        if (matchedRule) {
+                            console.log(`Matched rule ${matchedRule.id}, initiating DM...`);
+                            if (matchedRule.opening_message && matchedRule.button_text) {
+                                await sendButtonTemplate(senderId, matchedRule.opening_message, matchedRule.button_text, `RULE_${matchedRule.id}`);
+                            } else {
+                                await sendMessage(senderId, matchedRule.response_message);
+                            }
+                            await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
+                        }
                     }
 
                     if (payload) {
@@ -218,11 +262,11 @@ app.get('/api/rules', async (req, res) => {
 
 app.post('/api/rules', async (req, res) => {
     try {
-        const { trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text } = req.body;
+        const { trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type } = req.body;
         const result = await db.query(
-            `INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-            [trigger_keyword, match_type || 'exact', response_message, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text]
+            `INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+            [trigger_keyword, match_type || 'exact', response_message, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any']
         );
         res.status(201).json({ id: result.rows[0].id });
     } catch (error) {
@@ -232,7 +276,7 @@ app.post('/api/rules', async (req, res) => {
 
 app.put('/api/rules/:id', async (req, res) => {
     try {
-        const { trigger_keyword, match_type, response_message, is_active, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text } = req.body;
+        const { trigger_keyword, match_type, response_message, is_active, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type } = req.body;
         
         // If it's just a toggle, handle that
         if (Object.keys(req.body).length === 1 && is_active !== undefined) {
@@ -240,9 +284,9 @@ app.put('/api/rules/:id', async (req, res) => {
         } else {
             await db.query(
                 `UPDATE rules 
-                 SET trigger_keyword = $1, match_type = $2, response_message = $3, is_active = $4, target_post_type = $5, target_media_id = $6, opening_message = $7, button_text = $8, require_follow = $9, main_button_text = $10, main_button_url = $11, public_reply_text = $12 
-                 WHERE id = $13`,
-                [trigger_keyword, match_type || 'exact', response_message, is_active ? true : false, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, req.params.id]
+                 SET trigger_keyword = $1, match_type = $2, response_message = $3, is_active = $4, target_post_type = $5, target_media_id = $6, opening_message = $7, button_text = $8, require_follow = $9, main_button_text = $10, main_button_url = $11, public_reply_text = $12, trigger_type = $13, target_story_type = $14 
+                 WHERE id = $15`,
+                [trigger_keyword, match_type || 'exact', response_message, is_active ? true : false, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any', req.params.id]
             );
         }
         res.json({ success: true });
@@ -258,8 +302,8 @@ app.post('/api/rules/:id/copy', async (req, res) => {
         if (!rule) return res.status(404).json({ error: 'Rule not found' });
         
         const result = await db.query(
-            'INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
-            [rule.trigger_keyword, rule.match_type, rule.response_message, rule.target_post_type, rule.target_media_id, rule.opening_message, rule.button_text, rule.require_follow, rule.main_button_text, rule.main_button_url, rule.public_reply_text, false] // Copy is inactive by default
+            'INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id',
+            [rule.trigger_keyword, rule.match_type, rule.response_message, rule.target_post_type, rule.target_media_id, rule.opening_message, rule.button_text, rule.require_follow, rule.main_button_text, rule.main_button_url, rule.public_reply_text, rule.trigger_type, rule.target_story_type, false] // Copy is inactive by default
         );
         res.json({ id: result.rows[0].id, success: true });
     } catch (err) {

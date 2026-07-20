@@ -5,7 +5,7 @@ import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
-export default function Sidebar() {
+export default function Sidebar({ onOpenNewModal }) {
   const [stats, setStats] = useState({ total_dms: 0, limit: 500 });
 
   useEffect(() => {
@@ -37,13 +37,13 @@ export default function Sidebar() {
       </div>
 
       <div className="px-4 mb-6">
-        <NavLink 
-          to="/new-automation" 
+        <button 
+          onClick={onOpenNewModal}
           className="w-full bg-accent hover:bg-accent-hover text-black font-semibold rounded-lg py-3 flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(202,255,0,0.2)]"
         >
           <Zap size={18} />
           <span>New Automation</span>
-        </NavLink>
+        </button>
       </div>
 
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
