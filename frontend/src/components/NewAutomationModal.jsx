@@ -35,7 +35,7 @@ export default function NewAutomationModal({ isOpen, onClose }) {
 
         {/* Content */}
         <div className="p-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
             {/* Comments Card */}
             <div 
@@ -100,6 +100,29 @@ export default function NewAutomationModal({ isOpen, onClose }) {
               <p className="text-sm text-text-secondary mb-6 flex-1">When someone DMs a keyword</p>
               <div className="text-sm font-bold flex items-center justify-between">
                 Start here <span className="text-text-secondary group-hover:text-fuchsia-400 group-hover:translate-x-1 transition-all">→</span>
+              </div>
+            </div>
+
+            {/* Ice Breaker Card */}
+            <div 
+              onClick={() => handleSelect('ice_breaker')}
+              className="bg-[#ecfdf5]/5 border border-border rounded-xl p-6 cursor-pointer hover:border-emerald-500/50 hover:bg-[#ecfdf5]/10 transition-all group flex flex-col"
+            >
+              <div className="h-32 bg-[#ecfdf5]/10 rounded-lg mb-6 flex items-center justify-center border border-emerald-500/20">
+                 <div className="w-3/4 space-y-2">
+                   <div className="bg-white/10 px-4 py-2 rounded-2xl rounded-tr-sm w-full ml-auto">
+                     <div className="h-2 bg-white/20 rounded-full w-full"></div>
+                   </div>
+                   <div className="bg-white/10 px-4 py-2 rounded-2xl rounded-tr-sm w-5/6 ml-auto">
+                     <div className="h-2 bg-white/20 rounded-full w-full"></div>
+                   </div>
+                 </div>
+              </div>
+              <div className="text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Ice Breaker</div>
+              <h3 className="text-xl font-bold mb-2 group-hover:text-emerald-400 transition-colors">First Time DM</h3>
+              <p className="text-sm text-text-secondary mb-6 flex-1">Set up FAQ questions for new chats</p>
+              <div className="text-sm font-bold flex items-center justify-between">
+                Start here <span className="text-text-secondary group-hover:text-emerald-400 group-hover:translate-x-1 transition-all">→</span>
               </div>
             </div>
 

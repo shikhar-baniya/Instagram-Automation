@@ -23,7 +23,7 @@ async function initDB() {
                     trigger_keyword TEXT,
                     match_type TEXT CHECK(match_type IN ('exact', 'partial', 'any')) NOT NULL DEFAULT 'exact',
                     response_message TEXT NOT NULL,
-                    trigger_type TEXT CHECK(trigger_type IN ('post_comment', 'story_reply', 'story_mention', 'dm_keyword', 'live_comment')) NOT NULL DEFAULT 'post_comment',
+                    trigger_type TEXT CHECK(trigger_type IN ('post_comment', 'story_reply', 'story_mention', 'dm_keyword', 'live_comment', 'ice_breaker')) NOT NULL DEFAULT 'post_comment',
                     target_post_type TEXT CHECK(target_post_type IN ('any', 'specific', 'next')) NOT NULL DEFAULT 'any',
                     target_media_id TEXT,
                     target_story_type TEXT CHECK(target_story_type IN ('any', 'specific', 'next')) NOT NULL DEFAULT 'any',
@@ -46,6 +46,9 @@ async function initDB() {
                 ALTER TABLE rules ADD COLUMN IF NOT EXISTS clicks INTEGER DEFAULT 0;
                 ALTER TABLE rules ADD COLUMN IF NOT EXISTS trigger_type TEXT CHECK(trigger_type IN ('post_comment', 'story_reply', 'story_mention', 'dm_keyword', 'live_comment')) NOT NULL DEFAULT 'post_comment';
                 ALTER TABLE rules ADD COLUMN IF NOT EXISTS target_story_type TEXT CHECK(target_story_type IN ('any', 'specific', 'next')) NOT NULL DEFAULT 'any';
+                ALTER TABLE rules ADD COLUMN IF NOT EXISTS ice_breakers_config JSONB;
+                ALTER TABLE rules DROP CONSTRAINT IF EXISTS rules_trigger_type_check;
+                ALTER TABLE rules ADD CONSTRAINT rules_trigger_type_check CHECK(trigger_type IN ('post_comment', 'story_reply', 'story_mention', 'dm_keyword', 'live_comment', 'ice_breaker'));
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {

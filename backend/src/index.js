@@ -2,7 +2,30 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { initDB } = require('./db');
-const { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, checkFollowStatus, replyToComment } = require('./instagram');
+const { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, checkFollowStatus, replyToComment, setIceBreakers } = require('./instagram');
+
+async function syncIceBreakers() {
+    if (!db) return;
+    try {
+        const result = await db.query("SELECT * FROM rules WHERE is_active = true AND trigger_type = 'ice_breaker' ORDER BY created_at DESC LIMIT 1");
+        const rule = result.rows[0];
+        
+        let iceBreakersList = [];
+        if (rule && rule.ice_breakers_config) {
+            let configArray = rule.ice_breakers_config;
+            if (typeof configArray === 'string') configArray = JSON.parse(configArray);
+            
+            iceBreakersList = configArray.map((item, index) => ({
+                question: item.question.substring(0, 80), // Meta limit is 80 chars
+                payload: `ICEBREAKER_${rule.id}_${index}`
+            }));
+        }
+
+        await setIceBreakers(iceBreakersList);
+    } catch (err) {
+        console.error('Failed to sync ice breakers:', err);
+    }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -106,16 +129,36 @@ app.post('/api/webhook', async (req, res) => {
 
                     if (messageText) {
                         const senderId = messagingEvent.sender.id;
-                        const triggerType = isStoryReply ? 'story_reply' : 'dm_keyword';
-                        console.log(`Received message: ${messageText} from ${senderId}, triggerType: ${triggerType}`);
+                        const triggerTypes = isStoryReply ? ['story_reply'] : ['dm_keyword', 'ice_breaker'];
+                        console.log(`Received message: ${messageText} from ${senderId}, triggerTypes: ${triggerTypes}`);
 
-                        const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = $1', [triggerType]);
+                        const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = ANY($1)', [triggerTypes]);
                         const rules = result.rows;
                         let matchedRule = null;
 
                         for (const rule of rules) {
                             if (isStoryReply && rule.target_story_type !== 'any') {
                                 // Specific story matching requires fetching story ID, skipping for MVP
+                                continue;
+                            }
+
+                            if (rule.trigger_type === 'ice_breaker') {
+                                let configArray = rule.ice_breakers_config;
+                                if (typeof configArray === 'string') configArray = JSON.parse(configArray);
+                                if (configArray) {
+                                    for (let item of configArray) {
+                                        if (messageText.trim().toLowerCase() === item.question.toLowerCase()) {
+                                            matchedRule = {
+                                                ...rule,
+                                                response_message: item.response,
+                                                opening_message: null,
+                                                button_text: null
+                                            };
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (matchedRule) break;
                                 continue;
                             }
 
@@ -262,12 +305,23 @@ app.get('/api/rules', async (req, res) => {
 
 app.post('/api/rules', async (req, res) => {
     try {
-        const { trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type } = req.body;
+        const { trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type, ice_breakers_config } = req.body;
+        
+        let configJson = null;
+        if (ice_breakers_config) {
+            configJson = typeof ice_breakers_config === 'string' ? ice_breakers_config : JSON.stringify(ice_breakers_config);
+        }
+
         const result = await db.query(
-            `INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-            [trigger_keyword, match_type || 'exact', response_message, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any']
+            `INSERT INTO rules (trigger_keyword, match_type, response_message, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type, ice_breakers_config) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+            [trigger_keyword || '', match_type || 'exact', response_message || '', target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any', configJson]
         );
+        
+        if (trigger_type === 'ice_breaker') {
+            await syncIceBreakers();
+        }
+
         res.status(201).json({ id: result.rows[0].id });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -276,19 +330,31 @@ app.post('/api/rules', async (req, res) => {
 
 app.put('/api/rules/:id', async (req, res) => {
     try {
-        const { trigger_keyword, match_type, response_message, is_active, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type } = req.body;
+        const { trigger_keyword, match_type, response_message, is_active, target_post_type, target_media_id, opening_message, button_text, require_follow, main_button_text, main_button_url, public_reply_text, trigger_type, target_story_type, ice_breakers_config } = req.body;
         
         // If it's just a toggle, handle that
         if (Object.keys(req.body).length === 1 && is_active !== undefined) {
             await db.query('UPDATE rules SET is_active = $1 WHERE id = $2', [is_active ? true : false, req.params.id]);
         } else {
+            let configJson = null;
+            if (ice_breakers_config) {
+                configJson = typeof ice_breakers_config === 'string' ? ice_breakers_config : JSON.stringify(ice_breakers_config);
+            }
+
             await db.query(
                 `UPDATE rules 
-                 SET trigger_keyword = $1, match_type = $2, response_message = $3, is_active = $4, target_post_type = $5, target_media_id = $6, opening_message = $7, button_text = $8, require_follow = $9, main_button_text = $10, main_button_url = $11, public_reply_text = $12, trigger_type = $13, target_story_type = $14 
-                 WHERE id = $15`,
-                [trigger_keyword, match_type || 'exact', response_message, is_active ? true : false, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any', req.params.id]
+                 SET trigger_keyword = $1, match_type = $2, response_message = $3, is_active = $4, target_post_type = $5, target_media_id = $6, opening_message = $7, button_text = $8, require_follow = $9, main_button_text = $10, main_button_url = $11, public_reply_text = $12, trigger_type = $13, target_story_type = $14, ice_breakers_config = $15 
+                 WHERE id = $16`,
+                [trigger_keyword || '', match_type || 'exact', response_message || '', is_active ? true : false, target_post_type || 'any', target_media_id || null, opening_message, button_text, require_follow ? true : false, main_button_text, main_button_url, public_reply_text, trigger_type || 'post_comment', target_story_type || 'any', configJson, req.params.id]
             );
         }
+        
+        // Sync if this rule is an ice breaker, or if we are potentially turning off an ice breaker
+        const checkTypeRes = await db.query('SELECT trigger_type FROM rules WHERE id = $1', [req.params.id]);
+        if (checkTypeRes.rows[0] && checkTypeRes.rows[0].trigger_type === 'ice_breaker') {
+            await syncIceBreakers();
+        }
+
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -313,7 +379,15 @@ app.post('/api/rules/:id/copy', async (req, res) => {
 
 app.delete('/api/rules/:id', async (req, res) => {
     try {
+        const checkTypeRes = await db.query('SELECT trigger_type FROM rules WHERE id = $1', [req.params.id]);
+        const triggerType = checkTypeRes.rows[0] ? checkTypeRes.rows[0].trigger_type : null;
+
         await db.query('DELETE FROM rules WHERE id = $1', [req.params.id]);
+        
+        if (triggerType === 'ice_breaker') {
+            await syncIceBreakers();
+        }
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

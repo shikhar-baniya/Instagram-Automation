@@ -227,4 +227,21 @@ async function getUserProfile() {
     }
 }
 
-module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile };
+async function setIceBreakers(iceBreakersList) {
+    if (!PAGE_ACCESS_TOKEN) return;
+    try {
+        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messenger_profile`;
+        const payload = {
+            ice_breakers: iceBreakersList
+        };
+        const response = await axios.post(url, payload, {
+            headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` }
+        });
+        console.log(`Successfully updated Ice Breakers`, response.data);
+        return response.data;
+    } catch (error) {
+        console.error('Error setting ice breakers:', error.response ? error.response.data : error.message);
+    }
+}
+
+module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile, setIceBreakers };

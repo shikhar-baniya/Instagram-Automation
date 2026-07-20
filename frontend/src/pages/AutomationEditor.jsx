@@ -5,6 +5,7 @@ import { Smartphone, Check, ArrowLeft, Image as ImageIcon, X } from 'lucide-reac
 import PostCommentForm from '../components/forms/PostCommentForm';
 import DMKeywordForm from '../components/forms/DMKeywordForm';
 import StoryReplyForm from '../components/forms/StoryReplyForm';
+import IceBreakerForm from '../components/forms/IceBreakerForm';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -83,7 +84,8 @@ export default function AutomationEditor() {
           require_follow: rule.require_follow ? true : false,
           main_button_text: rule.main_button_text || '',
           main_button_url: rule.main_button_url || '',
-          public_reply_text: rule.public_reply_text || ''
+          public_reply_text: rule.public_reply_text || '',
+          ice_breakers_config: rule.ice_breakers_config
         });
       }
     } catch (error) {
@@ -239,6 +241,9 @@ export default function AutomationEditor() {
         )}
         {formData.trigger_type === 'story_reply' && (
           <StoryReplyForm formData={formData} setFormData={setFormData} />
+        )}
+        {formData.trigger_type === 'ice_breaker' && (
+          <IceBreakerForm formData={formData} setFormData={setFormData} />
         )}
       </div>
 

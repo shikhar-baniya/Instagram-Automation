@@ -158,18 +158,52 @@ export default function Home() {
                 const post = posts.find(p => p.id === rule.target_media_id);
                 const thumb = post?.thumbnail_url || post?.media_url;
                 
+                let title = "Comments ➝ DM";
+                let thumbContent = thumb ? <img src={thumb} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs">Any</div>;
+
+                if (rule.trigger_type === 'dm_keyword') {
+                  title = "Keywords ➝ DM";
+                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-emerald-500/20 text-emerald-400 font-bold">DM</div>;
+                } else if (rule.trigger_type === 'story_reply') {
+                  title = "Stories ➝ DM";
+                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-fuchsia-500/20 text-fuchsia-400 font-bold">STY</div>;
+                } else if (rule.trigger_type === 'ice_breaker') {
+                  title = "Ice Breaker ➝ DM";
+                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-amber-500/20 text-amber-400 font-bold">ICE</div>;
+                }
+
                 return (
                   <tr key={rule.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate(`/edit-automation/${rule.id}`)}>
                     <td className="p-4 flex gap-4 items-center">
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-800 shrink-0 border border-gray-700">
-                        {thumb ? <img src={thumb} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs">Any</div>}
+                        {thumbContent}
                       </div>
                       <div>
-                        <div className="font-bold text-sm mb-1">Comments ➝ DM</div>
+                        <div className="font-bold text-sm mb-1">{title}</div>
                         <div className="text-xs text-text-secondary truncate max-w-md flex items-center gap-1">
-                          User comments on {rule.target_post_type === 'any' ? 'Any Post' : 'Post'} 
-                          {rule.target_post_type === 'specific' && thumb && <div className="w-4 h-4 rounded overflow-hidden mx-1 inline-block"><img src={thumb} className="w-full h-full object-cover" /></div>}
-                          • {rule.match_type === 'any' ? 'any keyword' : rule.trigger_keyword} • {rule.opening_message ? 'Opening Message •' : ''} DM: '{rule.response_message.substring(0, 30)}...'
+                          {rule.trigger_type === 'dm_keyword' && (
+                            <>User DMs you with {rule.match_type === 'any' ? 'any keyword' : `'${rule.trigger_keyword}'`} • DM: '{rule.response_message.substring(0, 30)}...'</>
+                          )}
+                          {rule.trigger_type === 'story_reply' && (
+                            <>User replies to {rule.target_story_type === 'any' ? 'Any Story' : (rule.target_story_type === 'next' ? 'Next Story' : 'Specific Story')} • {rule.match_type === 'any' ? 'any keyword' : `'${rule.trigger_keyword}'`} • DM: '{rule.response_message.substring(0, 30)}...'</>
+                          )}
+                          {rule.trigger_type === 'ice_breaker' && (
+                            <>{(() => {
+                              let count = 0;
+                              try {
+                                const config = typeof rule.ice_breakers_config === 'string' ? JSON.parse(rule.ice_breakers_config) : rule.ice_breakers_config;
+                                count = Array.isArray(config) ? config.length : 0;
+                              } catch(e) {}
+                              return `Contains ${count} active Ice Breaker question${count === 1 ? '' : 's'}`;
+                            })()}</>
+                          )}
+                          {(!rule.trigger_type || rule.trigger_type === 'post_comment') && (
+                            <>
+                              User comments on {rule.target_post_type === 'any' ? 'Any Post' : 'Post'} 
+                              {rule.target_post_type === 'specific' && thumb && <div className="w-4 h-4 rounded overflow-hidden mx-1 inline-block"><img src={thumb} className="w-full h-full object-cover" /></div>}
+                              • {rule.match_type === 'any' ? 'any keyword' : rule.trigger_keyword} • {rule.opening_message ? 'Opening Message •' : ''} DM: '{rule.response_message.substring(0, 30)}...'
+                            </>
+                          )}
                         </div>
                       </div>
                     </td>
