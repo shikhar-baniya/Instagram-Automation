@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Play, MessageCircle, Heart, Share2, Bookmark, MoreVertical, Pause, Play as PlayIcon, Edit2, Copy, Trash2 } from 'lucide-react';
+import { Play, MessageCircle, Heart, Share2, Bookmark, MoreVertical, Pause, Play as PlayIcon, Edit2, Copy, Trash2, Zap, Users, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export default function Home() {
   const [posts, setPosts] = useState([]);
   const [rules, setRules] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -29,12 +31,14 @@ export default function Home() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [mediaRes, rulesRes] = await Promise.all([
+      const [mediaRes, rulesRes, analyticsRes] = await Promise.all([
         axios.get(`${API_BASE}/media`),
-        axios.get(`${API_BASE}/rules`)
+        axios.get(`${API_BASE}/rules`),
+        axios.get(`${API_BASE}/analytics`)
       ]);
       setPosts(mediaRes.data.data || []);
       setRules(rulesRes.data || []);
+      setAnalytics(analyticsRes.data);
     } catch (error) {
       console.error('Failed to fetch data', error);
     } finally {
@@ -42,11 +46,61 @@ export default function Home() {
     }
   };
 
+  const formatNumber = (num) => {
+    if (!num) return '0';
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+    return num.toString();
+  };
+
+  const generateChartData = () => {
+    const defaultData = { path: 'M0 250 L 1000 250', points: [], growth: 0 };
+    if (!analytics || !analytics.insights || !analytics.insights.followers || analytics.insights.followers.length === 0) return defaultData;
+    
+    const followerData = analytics.insights.followers;
+    const values = followerData.map(d => d.value);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const range = maxVal - minVal || 1;
+    
+    const width = 1000;
+    const height = 180; // height for the curve
+    const paddingY = 60; // top padding
+    const bottomY = 300;
+
+    const points = values.map((val, i) => {
+      const x = followerData.length > 1 ? (i / (followerData.length - 1)) * width : width / 2;
+      const y = paddingY + height - ((val - minVal) / range) * height;
+      return { x, y, val };
+    });
+
+    const pathString = points.reduce((acc, pt, i) => {
+      if (i === 0) return `M ${pt.x} ${pt.y}`;
+      // Smooth curve using a simple bezier to the next point
+      const prev = points[i - 1];
+      const cp1x = prev.x + (pt.x - prev.x) / 2;
+      const cp1y = prev.y;
+      const cp2x = prev.x + (pt.x - prev.x) / 2;
+      const cp2y = pt.y;
+      return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${pt.x} ${pt.y}`;
+    }, '');
+
+    const firstVal = values[0];
+    const lastVal = values[values.length - 1];
+    const growth = firstVal > 0 ? ((lastVal - firstVal) / firstVal * 100).toFixed(1) : 0;
+
+    return { pathString, points, growth };
+  };
+
+  const chartData = generateChartData();
+  const totalViews = analytics?.insights?.reach ? analytics.insights.reach.reduce((sum, d) => sum + d.value, 0) : 0;
+
   const handleSetupAutomation = (postId) => {
     navigate('/new-automation', { state: { preselectPostId: postId } });
   };
 
-  const handleToggleRule = async (rule) => {
+  const handleToggleRule = async (rule, e) => {
+    e.stopPropagation();
     try {
       setRules(prev => prev.map(r => r.id === rule.id ? { ...r, is_active: !rule.is_active } : r));
       await axios.put(`${API_BASE}/rules/${rule.id}`, { is_active: !rule.is_active });
@@ -56,205 +110,193 @@ export default function Home() {
     }
   };
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  };
+
   return (
-    <div className="max-w-6xl mx-auto pb-12">
-      <div className="mb-10">
-        <h1 className="text-3xl font-bold mb-2">Welcome @bingewithshikhar!</h1>
-        <p className="text-text-secondary">Let's automate your engagement.</p>
-      </div>
-
-      <div className="mb-12">
-        <div className="flex justify-between items-center mb-6">
+    <div className="max-w-[1440px] mx-auto pb-12">
+      {/* Welcome Header & Stats */}
+      <header className="mb-12">
+        <div className="flex justify-between items-end mb-8">
           <div>
-            <h2 className="text-xl font-bold">Recent Posts</h2>
-            <p className="text-sm text-text-secondary mt-1">Select a post to set up automation</p>
+            <h2 className="text-[32px] leading-tight font-semibold text-on-surface mb-2 font-['Plus_Jakarta_Sans'] tracking-tight">Welcome {analytics?.profile?.username ? `@${analytics.profile.username}` : 'back'}!</h2>
+            <p className="text-on-surface-variant text-[16px]">Here is how your automation hub is performing.</p>
           </div>
-        </div>
-
-        {loading ? (
-          <div className="h-64 flex items-center justify-center text-text-secondary">Loading posts...</div>
-        ) : (
-          <div className="flex gap-4 overflow-x-auto pb-6 snap-x items-stretch">
-            {posts.map((post) => (
-              <div key={post.id} className="w-72 shrink-0 bg-panel border border-border rounded-xl overflow-hidden snap-start relative group flex flex-col">
-                <div className="h-80 bg-gray-900 relative overflow-hidden shrink-0">
-                  {post.thumbnail_url || post.media_url ? (
-                    <img 
-                      src={post.thumbnail_url || post.media_url} 
-                      alt="Post" 
-                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">No Image</div>
-                  )}
-                  {post.media_type === 'VIDEO' && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
-                        <Play fill="white" size={24} />
-                      </div>
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black to-transparent">
-                    <p className="text-sm text-white line-clamp-2 overflow-hidden text-ellipsis" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                      {post.caption || "Instagram Post"}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="p-4 bg-panel flex-1 flex items-end">
-                  {(() => {
-                    const existingRule = rules.find(r => r.target_media_id === post.id);
-                    if (existingRule) {
-                      return (
-                        <button 
-                          onClick={() => navigate(`/edit-automation/${existingRule.id}`)}
-                          className="w-full py-2.5 bg-accent/20 text-accent font-semibold rounded-full hover:bg-accent/30 transition-colors"
-                        >
-                          View Automation
-                        </button>
-                      );
-                    }
-                    return (
-                      <button 
-                        onClick={() => handleSetupAutomation(post.id)}
-                        className="w-full py-2.5 bg-white text-black font-semibold rounded-full hover:bg-gray-200 transition-colors"
-                      >
-                        Set up Automation
-                      </button>
-                    );
-                  })()}
-                </div>
+          <div className="flex gap-4">
+            <div className="glass-card px-6 py-3 rounded-xl flex items-center gap-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Users className="text-primary w-6 h-6" />
               </div>
-            ))}
+              <div>
+                <p className="text-[12px] font-semibold tracking-wider uppercase text-on-surface-variant">Followers</p>
+                <p className="text-[24px] font-semibold leading-none">{formatNumber(analytics?.profile?.followers_count)}</p>
+              </div>
+            </div>
+            <div className="glass-card px-6 py-3 rounded-xl flex items-center gap-4">
+              <div className="p-2 bg-deep-indigo/10 rounded-lg">
+                <Heart className="text-deep-indigo w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold tracking-wider uppercase text-on-surface-variant">Avg. Engagement</p>
+                <p className="text-[24px] font-semibold leading-none">{formatNumber(analytics?.metrics?.avgEngagement)}</p>
+              </div>
+            </div>
+            <div className="glass-card px-6 py-3 rounded-xl flex items-center gap-4">
+              <div className="p-2 bg-emerald-500/10 rounded-lg">
+                <Eye className="text-emerald-400 w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold tracking-wider uppercase text-on-surface-variant">Total Views (30d)</p>
+                <p className="text-[24px] font-semibold leading-none">{formatNumber(totalViews)}</p>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      </header>
 
-      <div>
-        <div className="flex justify-between items-end mb-6">
-          <div>
-            <h2 className="text-2xl font-bold">Active Automations ({rules.length})</h2>
-            <p className="text-sm text-text-secondary">Running 24/7 to collect contacts</p>
+      {/* Follower Growth Chart */}
+      <section className="mb-16">
+        <div className="glass-card rounded-2xl p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-[20px] font-semibold text-on-surface font-['Plus_Jakarta_Sans']">Follower Growth (30 Days)</h3>
+            <span className="text-primary text-sm font-semibold bg-primary/10 px-3 py-1 rounded-full">{chartData.growth > 0 ? '+' : ''}{chartData.growth}%</span>
           </div>
-          <button className="px-4 py-2 border border-border rounded-full hover:bg-white/5 font-semibold text-sm transition-colors">
-            View All →
-          </button>
+          <div className="w-full h-64 relative overflow-hidden">
+            <svg className="w-full h-full chart-glow" preserveAspectRatio="none" viewBox="0 0 1000 300">
+              <defs>
+                <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#c0c1ff" stopOpacity="0.3"></stop>
+                  <stop offset="100%" stopColor="#c0c1ff" stopOpacity="0"></stop>
+                </linearGradient>
+              </defs>
+              <g stroke="rgba(255,255,255,0.03)" strokeWidth="1">
+                <line x1="0" x2="1000" y1="60" y2="60"></line>
+                <line x1="0" x2="1000" y1="120" y2="120"></line>
+                <line x1="0" x2="1000" y1="180" y2="180"></line>
+                <line x1="0" x2="1000" y1="240" y2="240"></line>
+              </g>
+              <path d={`${chartData.pathString} L 1000 300 L 0 300 Z`} fill="url(#chartGradient)"></path>
+              <path d={chartData.pathString} fill="none" stroke="#c0c1ff" strokeLinecap="round" strokeWidth="3"></path>
+              {chartData.points.map((pt, i) => (
+                <circle key={i} className="animate-pulse" cx={pt.x} cy={pt.y} fill="#c0c1ff" r="4"></circle>
+              ))}
+            </svg>
+          </div>
+        </div>
+      </section>
+
+
+
+      {/* Section 2: Active Automations */}
+      <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-[24px] font-semibold text-on-surface font-['Plus_Jakarta_Sans']">Active Automations</h3>
+          <button className="text-primary hover:underline text-[14px] font-medium">View all logs</button>
         </div>
 
-        <div className="bg-panel rounded-2xl border border-border overflow-x-auto pb-4">
+        <div className="glass-card rounded-xl overflow-hidden border border-white/5">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wider text-text-secondary">
-                <th className="p-4 font-semibold">Name</th>
-                <th className="p-4 font-semibold text-center">DMs</th>
-                <th className="p-4 font-semibold text-center">Clicks</th>
-                <th className="p-4 font-semibold text-center">CTR</th>
-                <th className="p-4 font-semibold text-center">Status</th>
-                <th className="p-4 font-semibold text-right">Actions</th>
+              <tr className="bg-white/5">
+                <th className="px-6 py-4 text-[12px] font-semibold text-on-surface-variant uppercase tracking-wider">Name</th>
+                <th className="px-6 py-4 text-[12px] font-semibold text-on-surface-variant uppercase tracking-wider text-center">DMs</th>
+                <th className="px-6 py-4 text-[12px] font-semibold text-on-surface-variant uppercase tracking-wider text-center">Clicks</th>
+                <th className="px-6 py-4 text-[12px] font-semibold text-on-surface-variant uppercase tracking-wider text-center">CTR</th>
+                <th className="px-6 py-4 text-[12px] font-semibold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
+                <th className="px-6 py-4"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
-              {rules.map(rule => {
-                const post = posts.find(p => p.id === rule.target_media_id);
-                const thumb = post?.thumbnail_url || post?.media_url;
-                
+            <tbody className="divide-y divide-white/5">
+              {rules.map((rule, idx) => {
                 let title = "Comments ➝ DM";
-                let thumbContent = thumb ? <img src={thumb} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs">Any</div>;
+                let iconContent = <MessageCircle className="text-primary w-5 h-5" />;
+                let iconBg = "bg-primary/10";
 
                 if (rule.trigger_type === 'dm_keyword') {
                   title = "Keywords ➝ DM";
-                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-emerald-500/20 text-emerald-400 font-bold">DM</div>;
+                  iconContent = <MessageCircle className="text-emerald-400 w-5 h-5" />;
+                  iconBg = "bg-emerald-500/10";
                 } else if (rule.trigger_type === 'story_reply') {
                   title = "Stories ➝ DM";
-                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-fuchsia-500/20 text-fuchsia-400 font-bold">STY</div>;
-                } else if (rule.trigger_type === 'ice_breaker') {
-                  title = "Ice Breaker ➝ DM";
-                  thumbContent = <div className="w-full h-full flex items-center justify-center text-xs bg-amber-500/20 text-amber-400 font-bold">ICE</div>;
+                  iconContent = <Play className="text-fuchsia-400 w-5 h-5" />;
+                  iconBg = "bg-fuchsia-500/10";
                 }
 
                 return (
-                  <tr key={rule.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate(`/edit-automation/${rule.id}`)}>
-                    <td className="p-4 flex gap-4 items-center">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-800 shrink-0 border border-gray-700">
-                        {thumbContent}
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm mb-1">{title}</div>
-                        <div className="text-xs text-text-secondary truncate max-w-md flex items-center gap-1">
-                          {rule.trigger_type === 'dm_keyword' && (
-                            <>User DMs you with {rule.match_type === 'any' ? 'any keyword' : `'${rule.trigger_keyword}'`} • DM: '{rule.response_message.substring(0, 30)}...'</>
-                          )}
-                          {rule.trigger_type === 'story_reply' && (
-                            <>User replies to {rule.target_story_type === 'any' ? 'Any Story' : (rule.target_story_type === 'next' ? 'Next Story' : 'Specific Story')} • {rule.match_type === 'any' ? 'any keyword' : `'${rule.trigger_keyword}'`} • DM: '{rule.response_message.substring(0, 30)}...'</>
-                          )}
-                          {rule.trigger_type === 'ice_breaker' && (
-                            <>{(() => {
-                              let count = 0;
-                              try {
-                                const config = typeof rule.ice_breakers_config === 'string' ? JSON.parse(rule.ice_breakers_config) : rule.ice_breakers_config;
-                                count = Array.isArray(config) ? config.length : 0;
-                              } catch(e) {}
-                              return `Contains ${count} active Ice Breaker question${count === 1 ? '' : 's'}`;
-                            })()}</>
-                          )}
-                          {(!rule.trigger_type || rule.trigger_type === 'post_comment') && (
-                            <>
-                              User comments on {rule.target_post_type === 'any' ? 'Any Post' : 'Post'} 
-                              {rule.target_post_type === 'specific' && thumb && <div className="w-4 h-4 rounded overflow-hidden mx-1 inline-block"><img src={thumb} className="w-full h-full object-cover" /></div>}
-                              • {rule.match_type === 'any' ? 'any keyword' : rule.trigger_keyword} • {rule.opening_message ? 'Opening Message •' : ''} DM: '{rule.response_message.substring(0, 30)}...'
-                            </>
-                          )}
+                  <motion.tr 
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    key={rule.id} 
+                    className="hover:bg-white/5 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/edit-automation/${rule.id}`)}
+                  >
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 ${iconBg} rounded-lg`}>
+                          {iconContent}
                         </div>
+                        <span className="text-[16px] font-medium">{title} - {rule.trigger_keyword || 'Any'}</span>
                       </div>
                     </td>
-                    <td className="p-4 text-center font-bold">{rule.dms_sent || 0}</td>
-                    <td className="p-4 text-center font-bold">{rule.clicks || 0}</td>
-                    <td className="p-4 text-center">
-                      <div className="inline-block px-2 py-1 rounded bg-green-500/20 text-green-400 font-medium text-xs">
-                        {rule.dms_sent ? ((rule.clicks || 0) / rule.dms_sent * 100).toFixed(1) : 0}%
-                      </div>
+                    <td className="px-6 py-5 text-center font-semibold">{rule.dms_sent || 0}</td>
+                    <td className="px-6 py-5 text-center font-semibold">{rule.clicks || 0}</td>
+                    <td className="px-6 py-5 text-center font-semibold">
+                      {rule.dms_sent ? ((rule.clicks || 0) / rule.dms_sent * 100).toFixed(1) : 0}%
                     </td>
-                    <td className="p-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${rule.is_active ? 'bg-accent/20 text-accent' : 'bg-gray-800 text-gray-400'}`}>
-                        {rule.is_active ? 'Live' : 'Paused'}
+                    <td className="px-6 py-5 text-center">
+                      <span className={`px-3 py-1 rounded-full text-[12px] font-semibold border ${rule.is_active ? 'bg-primary/10 text-primary border-primary/20' : 'bg-gray-800/50 text-gray-400 border-gray-700'}`}>
+                        {rule.is_active ? 'Active' : 'Paused'}
                       </span>
                     </td>
-                    <td className="p-4">
+                    <td className="px-6 py-5">
                       <div className="flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                         <button 
-                          onClick={() => handleToggleRule(rule)}
-                          className={`px-4 py-1.5 rounded-full border text-sm font-bold flex items-center gap-2 transition-colors shrink-0 ${rule.is_active ? 'border-orange-500/50 text-orange-400 hover:bg-orange-500/10' : 'border-accent/50 text-accent hover:bg-accent/10'}`}
+                          onClick={(e) => handleToggleRule(rule, e)}
+                          className="text-on-surface-variant hover:text-white transition-colors"
+                          title={rule.is_active ? "Pause" : "Start"}
                         >
-                          {rule.is_active ? <Pause size={14} /> : <PlayIcon size={14} />} {rule.is_active ? 'Pause' : 'Start'}
+                          {rule.is_active ? <Pause className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
                         </button>
-                        <div className="flex items-center gap-1 border-l border-border pl-3 ml-1 shrink-0">
-                          <button onClick={() => navigate(`/edit-automation/${rule.id}`)} className="p-2 hover:bg-white/10 rounded-full transition-colors group" title="Edit">
-                            <Edit2 size={16} className="text-text-secondary group-hover:text-white" />
-                          </button>
-                          <button onClick={async () => { await axios.post(`${API_BASE}/rules/${rule.id}/copy`); fetchData(); }} className="p-2 hover:bg-white/10 rounded-full transition-colors group" title="Duplicate">
-                            <Copy size={16} className="text-text-secondary group-hover:text-white" />
-                          </button>
-                          <button onClick={async () => { 
-                            if(confirm('Are you sure you want to delete this automation?')) {
-                              await axios.delete(`${API_BASE}/rules/${rule.id}`);
-                              setRules(prev => prev.filter(r => r.id !== rule.id));
-                            }
-                          }} className="p-2 hover:bg-red-500/10 rounded-full transition-colors group" title="Delete">
-                            <Trash2 size={16} className="text-text-secondary group-hover:text-red-500" />
-                          </button>
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/edit-automation/${rule.id}`); }} className="text-on-surface-variant hover:text-white transition-colors">
+                          <Edit2 className="w-5 h-5" />
+                        </button>
+                        <button onClick={async (e) => { 
+                          e.stopPropagation();
+                          if(confirm('Are you sure you want to delete this automation?')) {
+                            await axios.delete(`${API_BASE}/rules/${rule.id}`);
+                            setRules(prev => prev.filter(r => r.id !== rule.id));
+                          }
+                        }} className="text-on-surface-variant hover:text-error transition-colors">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                       </div>
                     </td>
-                  </tr>
-                )
+                  </motion.tr>
+                );
               })}
+              
+              {rules.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="py-12 text-center text-text-secondary">
+                    No active automations.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-          {rules.length === 0 && (
-            <div className="p-8 text-center text-text-secondary">No automations found. Set one up above!</div>
-          )}
         </div>
-      </div>
+      </motion.section>
     </div>
   );
 }

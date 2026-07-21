@@ -259,9 +259,14 @@ app.get('/api/media', async (req, res) => {
 
 app.get('/api/analytics', async (req, res) => {
     try {
-        const { getUserProfile } = require('./instagram');
+        const { getUserProfile, getRecentPosts, getInsights } = require('./instagram');
         const profile = await getUserProfile();
         const posts = await getRecentPosts();
+        
+        let insights = null;
+        if (profile && profile.id) {
+            insights = await getInsights(profile.id);
+        }
         
         // Calculate basic engagement metrics
         let totalLikes = 0;
@@ -274,6 +279,7 @@ app.get('/api/analytics', async (req, res) => {
         res.json({
             profile: profile || { followers_count: 0, media_count: 0, username: 'Unknown' },
             posts: posts.slice(0, 10), // Return top 10 for charts
+            insights: insights,
             metrics: {
                 totalLikes,
                 totalComments,

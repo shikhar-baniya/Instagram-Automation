@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Zap, FileJson, MessageSquare, BarChart, HelpCircle } from 'lucide-react';
+import { Home, Zap, FileJson, MessageSquare, BarChart, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
-export default function Sidebar({ onOpenNewModal }) {
+export default function Sidebar({ isCollapsed, onToggleCollapse }) {
   const [stats, setStats] = useState({ total_dms: 0, limit: 500 });
 
   useEffect(() => {
@@ -21,66 +21,75 @@ export default function Sidebar({ onOpenNewModal }) {
   }, []);
 
   const navItems = [
-    { icon: Home, label: 'Home', path: '/' },
-    { icon: Zap, label: 'Automations', path: '/automations' },
-    { icon: FileJson, label: 'Templates', path: '/templates' },
-    { icon: MessageSquare, label: 'Contacts', path: '/contacts' },
+    { icon: Home, label: 'Dashboard', path: '/' },
     { icon: BarChart, label: 'Analytics', path: '/analytics' },
+    { icon: Zap, label: 'Automation', path: '/automations' },
+    { icon: FileJson, label: 'Templates', path: '/templates' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
   return (
-    <div className="w-64 border-r border-border bg-panel flex flex-col h-screen fixed left-0 top-0">
-      <div className="p-6">
-        <h1 className="text-2xl font-bold tracking-tighter">
-          CREATOR<span className="text-accent">FLOW</span>
-        </h1>
-      </div>
-
-      <div className="px-4 mb-6">
-        <button 
-          onClick={onOpenNewModal}
-          className="w-full bg-accent hover:bg-accent-hover text-black font-semibold rounded-lg py-3 flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(202,255,0,0.2)]"
-        >
-          <Zap size={18} />
-          <span>New Automation</span>
+    <aside className={`fixed left-0 top-0 h-screen transition-all duration-300 ${isCollapsed ? 'w-[80px]' : 'w-[280px]'} bg-surface-container/60 backdrop-blur-xl border-r border-white/10 shadow-xl flex flex-col py-8 z-50`}>
+      
+      {/* Brand Header */}
+      <div className={`px-6 mb-10 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+        {!isCollapsed && (
+          <div>
+            <h1 className="text-2xl font-bold text-primary tracking-tight font-['Plus_Jakarta_Sans']">
+              Engagr<span className="text-deep-indigo text-3xl leading-none">.</span>
+            </h1>
+            <p className="text-on-surface-variant text-[12px] uppercase tracking-widest mt-1 font-semibold">Premium SaaS</p>
+          </div>
+        )}
+        <button onClick={onToggleCollapse} className="text-on-surface-variant hover:text-white transition-colors p-1">
+          {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
         </button>
       </div>
 
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1">
         {navItems.map((item) => (
           <NavLink
             key={item.label}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive 
-                  ? 'bg-white/5 text-white font-medium' 
-                  : 'text-text-secondary hover:bg-white/5 hover:text-white'
+              `${isCollapsed ? 'px-0 justify-center' : 'px-4'} py-3 flex items-center gap-3 transition-all active:scale-95 ${
+                isActive
+                  ? 'bg-primary-container/20 text-primary border-l-4 border-primary'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-white/5 border-l-4 border-transparent'
               }`
             }
+            title={isCollapsed ? item.label : ""}
           >
             <item.icon size={20} />
-            {item.label}
+            {!isCollapsed && <span className="font-medium">{item.label}</span>}
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-border mt-auto">
-        <div className="mb-4">
-          <div className="flex justify-between items-end mb-1">
-            <span className="text-sm text-text-secondary font-medium">DMs sent</span>
-            <span className="text-sm font-bold">{stats.total_dms}/{stats.limit}</span>
+      {/* Bottom Widget */}
+      <div className="px-6 mt-auto">
+        {!isCollapsed && (
+          <div className="glass-card p-4 rounded-xl mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-semibold text-on-surface-variant tracking-wider uppercase">DMs SENT</span>
+              <span className="text-[12px] font-semibold text-primary">{stats.total_dms} / {stats.limit}</span>
+            </div>
+            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden relative">
+              <div 
+                className="h-full bg-primary rounded-full transition-all duration-1000 ease-out"
+                style={{ width: `${Math.min((stats.total_dms / stats.limit) * 100, 100)}%` }}
+              >
+                <div className="absolute inset-0 bg-white/20 w-1/2 blur-sm translate-x-full animate-[shimmer_2s_infinite]"></div>
+              </div>
+            </div>
           </div>
-          <div className="w-full bg-gray-800 rounded-full h-1.5">
-            <div className="bg-accent h-1.5 rounded-full" style={{ width: `${Math.min((stats.total_dms / stats.limit) * 100, 100)}%` }}></div>
-          </div>
-        </div>
-
-        <button className="flex items-center gap-3 px-4 py-2 w-full text-text-secondary hover:text-white transition-colors text-sm">
-          <HelpCircle size={18} />
-          Support
+        )}
+        
+        <button className={`w-full electric-gradient py-3 rounded-lg text-sm font-medium text-white transition-all flex justify-center items-center ${isCollapsed ? 'px-0' : 'px-4'}`} title="Upgrade Plan">
+          {isCollapsed ? <Zap size={18} /> : 'Upgrade Plan'}
         </button>
       </div>
-    </div>
+    </aside>
   );
 }

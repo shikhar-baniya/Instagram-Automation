@@ -244,4 +244,37 @@ async function setIceBreakers(iceBreakersList) {
     }
 }
 
-module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile, setIceBreakers };
+async function getInsights(igUserId) {
+    if (!PAGE_ACCESS_TOKEN || !igUserId) return null;
+    try {
+        const insightsUrl = `https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/insights`;
+        
+        // Fetch reach and profile_views
+        const reachRes = await axios.get(insightsUrl, {
+            params: {
+                metric: 'reach,profile_views',
+                period: 'day',
+                access_token: PAGE_ACCESS_TOKEN
+            }
+        });
+        
+        // Fetch follower_count
+        const followerRes = await axios.get(insightsUrl, {
+            params: {
+                metric: 'follower_count',
+                period: 'day',
+                access_token: PAGE_ACCESS_TOKEN
+            }
+        });
+        
+        return {
+            reach: reachRes.data.data,
+            followers: followerRes.data.data
+        };
+    } catch (error) {
+        console.error('Error fetching insights:', error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile, setIceBreakers, getInsights };
