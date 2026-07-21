@@ -248,12 +248,16 @@ async function getInsights(igUserId) {
     if (!PAGE_ACCESS_TOKEN || !igUserId) return null;
     try {
         const insightsUrl = `https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/insights`;
+        const until = Math.floor(Date.now() / 1000);
+        const since = until - (30 * 24 * 60 * 60);
         
         // Fetch reach and profile_views
         const reachRes = await axios.get(insightsUrl, {
             params: {
                 metric: 'reach,profile_views',
                 period: 'day',
+                since,
+                until,
                 access_token: PAGE_ACCESS_TOKEN
             }
         });
@@ -263,13 +267,15 @@ async function getInsights(igUserId) {
             params: {
                 metric: 'follower_count',
                 period: 'day',
+                since,
+                until,
                 access_token: PAGE_ACCESS_TOKEN
             }
         });
         
         return {
-            reach: reachRes.data.data,
-            followers: followerRes.data.data
+            reach: reachRes.data.data[0]?.values || [],
+            followers: followerRes.data.data[0]?.values || []
         };
     } catch (error) {
         console.error('Error fetching insights:', error.response ? error.response.data : error.message);
