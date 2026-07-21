@@ -123,43 +123,51 @@ export default function AutomationEditor() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)] relative">
+      
+      {/* Background Decorator for Glassmorphism */}
+      <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-0 left-10 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[150px] pointer-events-none"></div>
+
       {/* Topbar */}
-      <div className="flex justify-between items-center mb-8 pb-4 border-b border-border shrink-0">
+      <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10 shrink-0 relative z-10">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/')} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-            <ArrowLeft size={20} />
+          <button onClick={() => navigate('/')} className="p-2 hover:bg-white/10 rounded-full transition-all">
+            <ArrowLeft size={20} className="text-white/80" />
           </button>
-          <h2 className="text-xl font-bold">{id ? 'Edit Automation' : 'New Automation'}</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-white/90">{id ? 'Edit Automation' : 'New Automation'}</h2>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-3">
           {id && (
             <button onClick={async () => {
               if(confirm('Are you sure you want to delete this automation?')) {
                 await axios.delete(`${API_BASE}/rules/${id}`);
                 navigate('/');
               }
-            }} className="px-6 py-2 bg-red-500/20 text-red-500 font-semibold rounded-lg hover:bg-red-500/30 transition-colors">
+            }} className="px-5 py-2 bg-red-500/10 text-red-400 font-semibold rounded-xl hover:bg-red-500/20 transition-all border border-red-500/20">
               Delete
             </button>
           )}
-          <button onClick={() => navigate('/')} className="px-6 py-2 rounded-lg font-medium hover:bg-white/5 transition-colors">
+          <button onClick={() => navigate('/')} className="px-5 py-2 rounded-xl font-medium hover:bg-white/10 transition-all text-white/70">
             Cancel
           </button>
-          <button onClick={handleSave} className="px-6 py-2 bg-accent text-black font-semibold rounded-lg hover:bg-accent-hover transition-colors shadow-neon">
+          <button onClick={handleSave} className="px-5 py-2 bg-white text-black font-semibold rounded-xl hover:bg-gray-200 transition-all shadow-lg">
             Save Automation
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-12 overflow-hidden">
+      <div className="flex-1 flex gap-8 overflow-hidden relative z-10">
         {/* Left: Mobile Preview */}
-        <div className="hidden lg:flex w-1/2 items-center justify-center bg-gray-900/30 rounded-3xl border border-border p-8 h-full shrink-0">
-          <div className="w-[320px] h-[650px] bg-black rounded-[40px] border-[8px] border-gray-800 relative overflow-hidden shadow-2xl flex flex-col">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-800 rounded-b-xl z-10"></div>
+        <div className="hidden lg:flex w-5/12 items-center justify-center macos-glass rounded-[2rem] p-8 h-full shrink-0 relative overflow-hidden">
+          {/* Subtle inner glow */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none rounded-[2rem]"></div>
+          
+          <div className="w-[320px] h-[650px] bg-black/90 rounded-[3rem] border-[10px] border-gray-900/80 relative overflow-hidden shadow-2xl flex flex-col ring-1 ring-white/10">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-gray-900/80 rounded-b-2xl z-10"></div>
             
             {/* Header */}
-            <div className="h-16 border-b border-gray-800 flex items-center px-4 pt-4 gap-3 bg-black z-0">
+            <div className="h-16 border-b border-gray-800/60 flex items-center px-4 pt-4 gap-3 bg-black/40 backdrop-blur-md z-0">
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-fuchsia-600 p-[2px]">
                 <div className="w-full h-full bg-black rounded-full"></div>
               </div>

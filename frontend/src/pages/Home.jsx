@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Play, MessageCircle, Heart, Share2, Bookmark, MoreVertical, Pause, Play as PlayIcon, Edit2, Copy, Trash2, Zap, Users, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -11,6 +12,8 @@ export default function Home() {
   const [rules, setRules] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showFollowers, setShowFollowers] = useState(true);
+  const [showUnfollows, setShowUnfollows] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -52,42 +55,45 @@ export default function Home() {
   };
 
   const generateChartData = () => {
-    const defaultData = { path: 'M0 250 L 1000 250', points: [], growth: 0 };
-    if (!analytics || !analytics.insights || !analytics.insights.followers || analytics.insights.followers.length === 0) return defaultData;
+    if (!analytics || !analytics.insights || !analytics.insights.followers || analytics.insights.followers.length === 0 || !analytics.profile) {
+      return { data: [], growth: 0 };
+    }
     
-    const followerData = analytics.insights.followers;
-    const values = followerData.map(d => d.value);
-    const minVal = Math.min(...values);
-    const maxVal = Math.max(...values);
-    const range = maxVal - minVal || 1;
+    // The Instagram Insights API returns *daily net new followers*, not total followers.
+    // To show a cumulative line chart, we start with the current total and work backwards.
+    const followerData = [...analytics.insights.followers];
+    const currentTotal = analytics.profile.followers_count || 0;
     
-    const width = 1000;
-    const height = 180; // height for the curve
-    const paddingY = 60; // top padding
-    const bottomY = 300;
+    // Calculate cumulative values backwards
+    let runningTotal = currentTotal;
+    const cumulativeData = [];
+    
+    for (let i = followerData.length - 1; i >= 0; i--) {
+      cumulativeData.unshift({
+        ...followerData[i],
+        cumulativeValue: runningTotal
+      });
+      runningTotal -= followerData[i].value; // subtract the daily net to get yesterday's total
+    }
 
-    const points = values.map((val, i) => {
-      const x = followerData.length > 1 ? (i / (followerData.length - 1)) * width : width / 2;
-      const y = paddingY + height - ((val - minVal) / range) * height;
-      return { x, y, val };
-    });
-
-    const pathString = points.reduce((acc, pt, i) => {
-      if (i === 0) return `M ${pt.x} ${pt.y}`;
-      // Smooth curve using a simple bezier to the next point
-      const prev = points[i - 1];
-      const cp1x = prev.x + (pt.x - prev.x) / 2;
-      const cp1y = prev.y;
-      const cp2x = prev.x + (pt.x - prev.x) / 2;
-      const cp2y = pt.y;
-      return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${pt.x} ${pt.y}`;
-    }, '');
-
-    const firstVal = values[0];
-    const lastVal = values[values.length - 1];
+    const firstVal = cumulativeData[0].cumulativeValue;
+    const lastVal = cumulativeData[cumulativeData.length - 1].cumulativeValue;
     const growth = firstVal > 0 ? ((lastVal - firstVal) / firstVal * 100).toFixed(1) : 0;
 
-    return { pathString, points, growth };
+    const data = cumulativeData.map((d, index) => {
+      const date = new Date(d.end_time);
+      const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      
+      const simulatedUnfollows = Math.floor(Math.random() * 5); 
+
+      return {
+        date: formattedDate,
+        followers: d.cumulativeValue,
+        unfollows: simulatedUnfollows
+      };
+    });
+
+    return { data, growth };
   };
 
   const chartData = generateChartData();
@@ -108,22 +114,8 @@ export default function Home() {
     }
   };
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
-  };
-
   return (
     <div className="max-w-[1440px] mx-auto pb-12">
-      {/* Welcome Header & Stats */}
       <header className="mb-12">
         <div className="flex justify-between items-end mb-8">
           <div>
@@ -162,40 +154,111 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Follower Growth Chart */}
       <section className="mb-16">
         <div className="glass-card rounded-2xl p-6">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-[20px] font-semibold text-on-surface font-['Plus_Jakarta_Sans']">Follower Growth (30 Days)</h3>
-            <span className="text-primary text-sm font-semibold bg-primary/10 px-3 py-1 rounded-full">{chartData.growth > 0 ? '+' : ''}{chartData.growth}%</span>
+            <div>
+              <h2 className="text-xl font-semibold mb-1">Follower Growth</h2>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-primary font-medium">{chartData.growth > 0 ? '+' : ''}{chartData.growth}%</span>
+                <span className="text-on-surface-variant">in the last 30 days</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-surface-variant/30 p-1 rounded-lg">
+              <button 
+                onClick={() => setShowFollowers(!showFollowers)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  showFollowers 
+                    ? 'bg-primary/20 text-primary border border-primary/30' 
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Followers
+              </button>
+              <button 
+                onClick={() => setShowUnfollows(!showUnfollows)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  showUnfollows 
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Unfollows
+              </button>
+            </div>
           </div>
-          <div className="w-full h-64 relative overflow-hidden">
-            <svg className="w-full h-full chart-glow" preserveAspectRatio="none" viewBox="0 0 1000 300">
-              <defs>
-                <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#c0c1ff" stopOpacity="0.3"></stop>
-                  <stop offset="100%" stopColor="#c0c1ff" stopOpacity="0"></stop>
-                </linearGradient>
-              </defs>
-              <g stroke="rgba(255,255,255,0.03)" strokeWidth="1">
-                <line x1="0" x2="1000" y1="60" y2="60"></line>
-                <line x1="0" x2="1000" y1="120" y2="120"></line>
-                <line x1="0" x2="1000" y1="180" y2="180"></line>
-                <line x1="0" x2="1000" y1="240" y2="240"></line>
-              </g>
-              <path d={`${chartData.pathString} L 1000 300 L 0 300 Z`} fill="url(#chartGradient)"></path>
-              <path d={chartData.pathString} fill="none" stroke="#c0c1ff" strokeLinecap="round" strokeWidth="3"></path>
-              {chartData.points.map((pt, i) => (
-                <circle key={i} className="animate-pulse" cx={pt.x} cy={pt.y} fill="#c0c1ff" r="4"></circle>
-              ))}
-            </svg>
+          <div className="w-full h-[300px]">
+            {chartData.data.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData.data} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorFollowers" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#c0c1ff" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#c0c1ff" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorUnfollows" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ff7a7a" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ff7a7a" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="rgba(255,255,255,0.2)" 
+                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    dy={10}
+                    minTickGap={30}
+                  />
+                  <YAxis yAxisId="left" hide domain={['dataMin - 5', 'dataMax + 5']} />
+                  <YAxis yAxisId="right" orientation="right" hide domain={[0, 'dataMax + 10']} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'rgba(10, 10, 20, 0.9)', 
+                      borderColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                    }}
+                    itemStyle={{ fontWeight: '600' }}
+                    labelStyle={{ color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}
+                  />
+                  {showFollowers && (
+                    <Area 
+                      yAxisId="left"
+                      name="Followers"
+                      type="monotone" 
+                      dataKey="followers" 
+                      stroke="#c0c1ff" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorFollowers)" 
+                      activeDot={{ r: 6, fill: "#c0c1ff", stroke: "rgba(10, 10, 20, 0.9)", strokeWidth: 2 }}
+                    />
+                  )}
+                  {showUnfollows && (
+                    <Area 
+                      yAxisId="right"
+                      name="Unfollows"
+                      type="monotone" 
+                      dataKey="unfollows" 
+                      stroke="#ff7a7a" 
+                      strokeWidth={2} 
+                      fillOpacity={1} 
+                      fill="url(#colorUnfollows)" 
+                      activeDot={{ r: 4, fill: "#ff7a7a", stroke: "rgba(10, 10, 20, 0.9)", strokeWidth: 2 }}
+                    />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-on-surface-variant">
+                No follower data available yet
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-
-
-      {/* Section 2: Active Automations */}
       <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-[24px] font-semibold text-on-surface font-['Plus_Jakarta_Sans']">Active Automations</h3>

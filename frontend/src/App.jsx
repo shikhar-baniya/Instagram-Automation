@@ -6,6 +6,7 @@ import Automations from './pages/Automations';
 import AutomationEditor from './pages/AutomationEditor';
 import Analytics from './pages/Analytics';
 import Templates from './pages/Templates';
+import VisualAutomationEditor from './pages/VisualAutomationEditor';
 import NewAutomationModal from './components/NewAutomationModal';
 import TopNavBar from './components/TopNavBar';
 import { useState } from 'react';
@@ -28,11 +29,13 @@ const AnimatedRoutes = () => {
   
   return (
     <AnimatePresence mode="wait">
+      {/* Routes setup */}
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageTransition><Home /></PageTransition>} />
         <Route path="/automations" element={<PageTransition><Automations /></PageTransition>} />
         <Route path="/new-automation" element={<PageTransition><AutomationEditor /></PageTransition>} />
         <Route path="/edit-automation/:id" element={<PageTransition><AutomationEditor /></PageTransition>} />
+        <Route path="/visual-automation" element={<PageTransition><VisualAutomationEditor /></PageTransition>} />
         <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
         <Route path="/templates" element={<PageTransition><Templates /></PageTransition>} />
         <Route path="*" element={<Navigate to="/" replace />} />

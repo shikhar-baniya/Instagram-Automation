@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Zap, FileJson, MessageSquare, BarChart, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BarChart3, LayoutTemplate, Settings, Zap, ChevronLeft, ChevronRight, GitMerge } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
@@ -21,10 +21,11 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }) {
   }, []);
 
   const navItems = [
-    { icon: Home, label: 'Dashboard', path: '/' },
-    { icon: BarChart, label: 'Analytics', path: '/analytics' },
-    { icon: Zap, label: 'Automation', path: '/automations' },
-    { icon: FileJson, label: 'Templates', path: '/templates' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+    { icon: MessageSquare, label: 'Automations', path: '/automations' },
+    { icon: GitMerge, label: 'Visual Builder', path: '/visual-automation' },
+    { icon: LayoutTemplate, label: 'Templates', path: '/templates' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
@@ -71,17 +72,9 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }) {
       <div className="px-6 mt-auto">
         {!isCollapsed && (
           <div className="glass-card p-4 rounded-xl mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[12px] font-semibold text-on-surface-variant tracking-wider uppercase">DMs SENT</span>
-              <span className="text-[12px] font-semibold text-primary">{stats.total_dms} / {stats.limit}</span>
-            </div>
-            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden relative">
-              <div 
-                className="h-full bg-primary rounded-full transition-all duration-1000 ease-out"
-                style={{ width: `${Math.min((stats.total_dms / stats.limit) * 100, 100)}%` }}
-              >
-                <div className="absolute inset-0 bg-white/20 w-1/2 blur-sm translate-x-full animate-[shimmer_2s_infinite]"></div>
-              </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold text-on-surface-variant tracking-wider uppercase">Total DMs Sent</span>
+              <span className="text-[14px] font-semibold text-primary">{stats.total_dms}</span>
             </div>
           </div>
         )}
