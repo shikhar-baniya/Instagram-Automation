@@ -268,31 +268,31 @@ export default function Templates() {
   const renderCard = (template) => (
     <div 
       key={template.id} 
-      className="bg-panel border border-border rounded-xl p-5 hover:border-accent transition-colors cursor-pointer group flex flex-col"
+      className="macos-glass-panel border border-white/5 rounded-3xl p-6 hover:border-white/20 hover:shadow-lg transition-all duration-300 cursor-pointer group flex flex-col shadow-sm"
       onClick={() => handleTemplateClick(template)}
     >
-      <h3 className="font-bold text-lg mb-1 group-hover:text-accent transition-colors">{template.title}</h3>
-      <p className="text-sm text-text-secondary mb-6 flex-1">{template.description}</p>
+      <h3 className="font-bold text-lg mb-2 text-white/90 group-hover:text-blue-400 transition-colors">{template.title}</h3>
+      <p className="text-sm text-gray-400 mb-6 flex-1">{template.description}</p>
       
       {/* Mock Chat UI */}
-      <div className="mt-auto space-y-4 pt-4 border-t border-border">
+      <div className="mt-auto space-y-4 pt-5 border-t border-white/10">
         {/* User Message */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center text-xs font-bold text-white">U</div>
-          <div className="bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2 text-sm text-gray-200 shadow-sm inline-block">
+          <div className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex-shrink-0 flex items-center justify-center text-xs font-bold text-white shadow-inner">U</div>
+          <div className="bg-black/40 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-2 text-sm text-white/90 shadow-inner inline-block backdrop-blur-sm">
             {template.userMessage}
           </div>
         </div>
         
         {/* Bot Reply Arrow connecting to user message */}
-        <div className="pl-3 border-l-2 border-gray-700 ml-4 py-1"></div>
+        <div className="pl-3 border-l-2 border-white/10 ml-4 py-1"></div>
 
         {/* Bot Message */}
-        <div className="ml-8 space-y-2">
-          <div className="bg-gray-700 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-2 text-sm shadow-sm inline-block max-w-[90%]">
+        <div className="ml-8 space-y-2 flex flex-col items-start">
+          <div className="bg-blue-500/10 border border-blue-500/20 text-blue-100 rounded-2xl rounded-bl-sm px-4 py-2 text-sm shadow-inner inline-block max-w-[90%] backdrop-blur-sm">
             {template.botReplyText}
           </div>
-          <div className="bg-gray-600 hover:bg-gray-500 text-white rounded-xl px-4 py-2 text-sm text-center font-medium shadow-sm transition-colors max-w-[90%] block">
+          <div className="bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-xl px-4 py-2 text-sm text-center font-medium shadow-sm transition-all max-w-[90%] block backdrop-blur-sm">
             {template.botButtonText}
           </div>
         </div>
