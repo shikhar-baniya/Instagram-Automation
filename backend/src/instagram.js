@@ -4,13 +4,14 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GRAPH_API_VERSION = 'v25.0'; 
 
 class MetaApiError extends Error {
-    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient) {
+    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient, rawMessage = null) {
         super(message);
         this.name = 'MetaApiError';
         this.statusCode = statusCode;
         this.metaErrorCode = metaErrorCode;
         this.metaErrorSubcode = metaErrorSubcode;
         this.isTransient = isTransient;
+        this.rawMessage = rawMessage || message;
     }
 }
 
@@ -28,7 +29,7 @@ function formatMetaErrorMessage(metaCode, subcode, rawMsg) {
         return "User's Instagram privacy settings restrict receiving message requests from public accounts.";
     }
     if (metaCode === 613 || metaCode === 4 || msg.toLowerCase().includes("rate limit")) {
-        return "Instagram hourly rate limit (250 DMs/hour) exceeded. Remaining messages will queue for retries.";
+        return "Instagram rate limit reached. This send can be retried after the rate limit resets.";
     }
     if (metaCode === 200 || msg.toLowerCase().includes("permission")) {
         return "Page lacks permission to DM this user or user has not opted into receiving DMs.";
@@ -54,10 +55,10 @@ function parseMetaError(error) {
         // Transient errors: 5xx server errors, HTTP 429 / Meta Code 613 (rate limit), network timeouts
         const isTransient = statusCode >= 500 || statusCode === 429 || metaCode === 613 || metaCode === 4 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
         
-        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient);
+        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient, rawMessage);
     }
     const isTransient = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || !error.response;
-    return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient);
+    return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient, error.message);
 }
 
 async function sendPrivateReply(commentId, messageText) {

@@ -65,6 +65,34 @@ async function sendWithRetry(sendFn, maxRetries = 3) {
     }
 }
 
+async function claimExecution({ eventId, senderId, mediaId = null, text, triggerType }) {
+    if (!eventId) throw new Error(`Cannot safely process ${triggerType}: Meta did not provide an event ID.`);
+
+    const result = await db.query(
+        `INSERT INTO automation_executions
+            (comment_id, sender_id, media_id, comment_text, normalized_comment_text, trigger_type, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'received')
+         ON CONFLICT (comment_id) DO NOTHING
+         RETURNING id`,
+        [eventId.toString(), senderId, mediaId ? mediaId.toString() : null, text || '', normalizeText(text), triggerType]
+    );
+    return result.rows[0]?.id || null;
+}
+
+async function markExecutionFailed(executionId, error) {
+    if (!executionId) return;
+    await db.query(
+        `UPDATE automation_executions
+         SET status = 'failed', error_message = $1, meta_error_message = $2,
+             meta_error_code = $3, meta_error_subcode = $4, meta_http_status = $5,
+             is_transient_error = $6, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7`,
+        [error.message || 'Delivery rejected by Instagram API.', error.rawMessage || error.message || null,
+         error.metaErrorCode?.toString() || null, error.metaErrorSubcode?.toString() || null,
+         error.statusCode || null, error.isTransient || false, executionId]
+    );
+}
+
 let cachedProfile = null;
 let lastProfileFetch = 0;
 async function getCachedProfile() {
@@ -119,29 +147,27 @@ app.post('/api/webhook', async (req, res) => {
                             
                             console.log(`Received comment: "${commentText}" by @${senderHandle} on media: ${mediaId}`);
 
-                            // 1. Idempotency Check
-                            if (commentId) {
-                                const existing = await db.query('SELECT * FROM automation_executions WHERE comment_id = $1', [commentId.toString()]);
-                                if (existing.rows.length > 0) {
-                                    console.log(`[Idempotency] Comment ${commentId} already processed (status: '${existing.rows[0].status}'). Skipping.`);
-                                    continue;
-                                }
+                            // Atomically claim this comment before any side effect. A duplicate
+                            // webhook delivery returns no row and must never send another reply.
+                            let executionId;
+                            try {
+                                executionId = await claimExecution({
+                                    eventId: commentId,
+                                    senderId: `@${senderHandle}`,
+                                    mediaId,
+                                    text: commentText,
+                                    triggerType: 'post_comment'
+                                });
+                            } catch (e) {
+                                console.error(`Unable to claim comment ${commentId}:`, e.message);
+                                continue;
+                            }
+                            if (!executionId) {
+                                console.log(`[Idempotency] Comment ${commentId} was already claimed. Skipping.`);
+                                continue;
                             }
 
                             const normalizedInput = normalizeText(commentText);
-
-                            // 2. Stage: Received -> Record execution
-                            let executionId = null;
-                            try {
-                                const insRes = await db.query(
-                                    `INSERT INTO automation_executions (comment_id, sender_id, media_id, comment_text, normalized_comment_text, trigger_type, status) 
-                                     VALUES ($1, $2, $3, $4, $5, 'post_comment', 'received') RETURNING id`,
-                                    [commentId ? commentId.toString() : null, `@${senderHandle}`, mediaId ? mediaId.toString() : null, commentText, normalizedInput]
-                                );
-                                executionId = insRes.rows[0]?.id;
-                            } catch (e) {
-                                console.error("Failed to insert execution record:", e.message);
-                            }
 
                             // 3. Find matching rule
                             const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = $1', ['post_comment']);
@@ -228,12 +254,7 @@ app.post('/api/webhook', async (req, res) => {
 
                             } catch (metaErr) {
                                 console.error(`Meta send failed for comment ${commentId}:`, metaErr.message);
-                                if (executionId) {
-                                    await db.query(
-                                        `UPDATE automation_executions SET status = 'failed', error_message = $1, meta_error_code = $2, is_transient_error = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`,
-                                        [metaErr.message, metaErr.metaErrorCode ? metaErr.metaErrorCode.toString() : null, metaErr.isTransient || false, executionId]
-                                    );
-                                }
+                                await markExecutionFailed(executionId, metaErr);
                                 // Track failure on rule
                                 await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
                             }
@@ -259,27 +280,35 @@ app.post('/api/webhook', async (req, res) => {
 
                         if (messageText) {
                             const senderId = messagingEvent.sender.id;
-                            const mid = (messagingEvent.message && messagingEvent.message.mid) ? messagingEvent.message.mid : `DM_${Date.now()}_${senderId}`;
+                            const mid = messagingEvent.message && messagingEvent.message.mid;
+                            if (!mid) {
+                                console.warn('Skipping inbound DM without a Meta message ID; it cannot be processed idempotently.');
+                                continue;
+                            }
                             const triggerType = isStoryReply ? 'story_reply' : 'dm_keyword';
 
                             console.log(`Received DM message: "${messageText}" from ${senderId}`);
 
-                            // Check idempotency for DM
-                            const existingDm = await db.query('SELECT * FROM automation_executions WHERE comment_id = $1', [mid]);
-                            if (existingDm.rows.length === 0) {
-                                let dmExecId = null;
-                                const normalizedInput = normalizeText(messageText);
+                            // Atomically claim the inbound message before any side effect.
+                            let dmExecId;
+                            try {
+                                dmExecId = await claimExecution({
+                                    eventId: mid,
+                                    senderId: `@user_${senderId.slice(-4)}`,
+                                    text: messageText,
+                                    triggerType
+                                });
+                            } catch (e) {
+                                console.error(`Unable to claim inbound DM ${mid}:`, e.message);
+                                continue;
+                            }
+                            if (!dmExecId) {
+                                console.log(`[Idempotency] Inbound DM ${mid} was already claimed. Skipping.`);
+                                continue;
+                            }
 
-                                try {
-                                    const insRes = await db.query(
-                                        `INSERT INTO automation_executions (comment_id, sender_id, comment_text, normalized_comment_text, trigger_type, status) 
-                                         VALUES ($1, $2, $3, $4, $5, 'received') RETURNING id`,
-                                        [mid, `@user_${senderId.slice(-4)}`, messageText, normalizedInput, triggerType]
-                                    );
-                                    dmExecId = insRes.rows[0]?.id;
-                                } catch (e) {
-                                    console.error("Failed to log DM execution record:", e.message);
-                                }
+                            {
+                                const normalizedInput = normalizeText(messageText);
 
                                 const triggerTypes = isStoryReply ? ['story_reply'] : ['dm_keyword', 'ice_breaker'];
                                 const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = ANY($1)', [triggerTypes]);
@@ -354,9 +383,7 @@ app.post('/api/webhook', async (req, res) => {
                                         await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
                                     } catch (err) {
                                         console.error("Error sending DM:", err.message);
-                                        if (dmExecId) {
-                                            await db.query(`UPDATE automation_executions SET status = 'failed', error_message = $1, meta_error_code = $2, is_transient_error = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`, [err.message, err.metaErrorCode?.toString() || null, err.isTransient || false, dmExecId]);
-                                        }
+                                        await markExecutionFailed(dmExecId, err);
                                         await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
                                     }
                                 }
@@ -396,15 +423,30 @@ app.post('/api/webhook', async (req, res) => {
                                                 await sendMessage(senderId, rule.response_message);
                                             }
                                             
-                                            // Update execution status deterministically!
-                                            if (execId) {
-                                                await db.query(`UPDATE automation_executions SET status = 'accepted_by_meta', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [execId]);
-                                            } else {
-                                                await db.query(`UPDATE automation_executions SET status = 'accepted_by_meta', updated_at = CURRENT_TIMESTAMP WHERE rule_id = $1 AND status = 'pending_button_click'`, [rule.id]);
-                                            }
+                                            // New buttons carry their exact execution ID. Older buttons
+                                            // safely fall back to the pending executions for this rule.
+                                            const statusUpdate = execId
+                                                ? await db.query(
+                                                    `UPDATE automation_executions
+                                                     SET status = 'accepted_by_meta', error_message = NULL,
+                                                         updated_at = CURRENT_TIMESTAMP
+                                                     WHERE id = $1 AND rule_id = $2 AND status = 'pending_button_click'
+                                                     RETURNING id`,
+                                                    [execId, rule.id]
+                                                )
+                                                : await db.query(
+                                                    `UPDATE automation_executions
+                                                     SET status = 'accepted_by_meta', error_message = NULL,
+                                                         updated_at = CURRENT_TIMESTAMP
+                                                     WHERE rule_id = $1 AND status = 'pending_button_click'
+                                                     RETURNING id`,
+                                                    [rule.id]
+                                                );
+                                            console.log(`[Postback] Final DM accepted; marked ${statusUpdate.rowCount} execution(s) as sent.`);
                                             await db.query('UPDATE rules SET clicks = clicks + 1 WHERE id = $1', [rule.id]);
                                         } catch (e) {
                                             console.error("Error sending postback response:", e.message);
+                                            if (execId) await markExecutionFailed(execId, e);
                                         }
                                     }
                                 }
@@ -509,11 +551,19 @@ app.get('/api/executions', async (req, res) => {
         let countParams = [];
         let dataParams = [];
 
-        if (status && status !== 'all') {
-            countQuery += ` WHERE e.status = $1`;
-            dataQuery += ` WHERE e.status = $1`;
-            countParams.push(status);
-            dataParams.push(status, limit, offset);
+        const statusFilters = {
+            sent: ["accepted_by_meta"],
+            pending: ["pending_button_click"],
+            failed: ["failed"],
+            skipped: ["not_matched"]
+        };
+        const statuses = statusFilters[status];
+
+        if (statuses) {
+            countQuery += ` WHERE e.status = ANY($1)`;
+            dataQuery += ` WHERE e.status = ANY($1)`;
+            countParams.push(statuses);
+            dataParams.push(statuses, limit, offset);
             dataQuery += ` ORDER BY e.created_at DESC LIMIT $2 OFFSET $3`;
         } else {
             dataParams.push(limit, offset);
@@ -543,7 +593,7 @@ app.get('/api/executions', async (req, res) => {
 app.get('/api/executions/stats', async (req, res) => {
     try {
         const totalAttempted = await db.query('SELECT COUNT(*) FROM automation_executions');
-        const accepted = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status IN ('accepted_by_meta', 'pending_button_click')");
+        const accepted = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'accepted_by_meta'");
         const failed = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'failed'");
         const pendingClicks = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'pending_button_click'");
 

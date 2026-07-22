@@ -21,6 +21,8 @@ export default function Analytics() {
 
     useEffect(() => {
         fetchAllData();
+        const refreshInterval = window.setInterval(fetchAllData, 10000);
+        return () => window.clearInterval(refreshInterval);
     }, [currentPage, pageSize, activeStatusFilter]);
 
     const fetchAllData = async () => {
@@ -73,7 +75,7 @@ export default function Analytics() {
     const formatErrorTooltip = (msg, code) => {
         if (!msg) return "Delivery rejected by Instagram API.";
         if (msg.includes("غير صالح") || msg.toLowerCase().includes("invalid comment") || code === '100') {
-            return "Instagram rejected private reply for this comment. Causes: (1) User already received a DM for a prior comment on this post, (2) User privacy settings restrict DMs, or (3) Instagram spam filter auto-hid the comment.";
+            return "Instagram rejected this comment for a private reply. Check the saved Meta error code and subcode; common causes are a duplicate private reply, deletion, or an expired eligibility window.";
         }
         if (/[^\x00-\x7F]/.test(msg)) {
             return "Instagram API Error: Private reply failed for this comment.";
@@ -127,7 +129,7 @@ export default function Analytics() {
                         <XCircle size={12} />
                         Failed
                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
-                            <strong>Meta Error {exec.meta_error_code ? `(Code ${exec.meta_error_code})` : ""}:</strong> {formatErrorTooltip(exec.error_message, exec.meta_error_code)}
+                            <strong>Meta Error {exec.meta_error_code ? `(Code ${[exec.meta_error_code, exec.meta_error_subcode].filter(Boolean).join(' / ')})` : ""}:</strong> {formatErrorTooltip(exec.error_message, exec.meta_error_code)}
                         </span>
                     </span>
                 );
@@ -169,7 +171,7 @@ export default function Analytics() {
                 </p>
                 <ul className="list-disc pl-5 text-xs text-gray-300 space-y-1">
                     <li><strong>User doesn't follow / Privacy settings:</strong> User restricts message requests from public pages. Enable "Ask to follow" or "Public reply" in your settings.</li>
-                    <li><strong>Rate limit exceeded:</strong> Instagram's 250 DMs/hour limit was hit. Remaining messages queue automatically for retries.</li>
+                    <li><strong>Rate limit exceeded:</strong> Instagram rejected a request as rate-limited. Check the saved Meta error code before retrying.</li>
                     <li><strong>7-day window expired:</strong> The user must engage with you again (comment/reply) to become eligible for DMs.</li>
                 </ul>
             </div>

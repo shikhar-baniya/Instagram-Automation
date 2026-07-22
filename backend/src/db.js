@@ -65,7 +65,10 @@ async function initDB() {
                     rule_id INTEGER REFERENCES rules(id) ON DELETE SET NULL,
                     status VARCHAR(50) NOT NULL DEFAULT 'received',
                     error_message TEXT,
+                    meta_error_message TEXT,
                     meta_error_code VARCHAR(50),
+                    meta_error_subcode VARCHAR(50),
+                    meta_http_status INTEGER,
                     is_transient_error BOOLEAN DEFAULT false,
                     retry_count INTEGER DEFAULT 0,
                     public_reply_sent BOOLEAN DEFAULT false,
@@ -76,9 +79,12 @@ async function initDB() {
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_comment_id ON automation_executions(comment_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_rule_id ON automation_executions(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_status ON automation_executions(status);
+            `);
 
-                -- Purge self/bot replies that were previously logged
-                DELETE FROM automation_executions WHERE sender_id ILIKE '%bingewithshikhar%' OR comment_text ILIKE 'Thanks for your comment%';
+            await pool.query(`
+                ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_error_message TEXT;
+                ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_error_subcode VARCHAR(50);
+                ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_http_status INTEGER;
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {
