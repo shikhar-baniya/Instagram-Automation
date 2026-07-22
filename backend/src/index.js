@@ -65,6 +65,21 @@ async function sendWithRetry(sendFn, maxRetries = 3) {
     }
 }
 
+let cachedProfile = null;
+let lastProfileFetch = 0;
+async function getCachedProfile() {
+    if (!cachedProfile || Date.now() - lastProfileFetch > 300000) {
+        try {
+            const profile = await getUserProfile();
+            if (profile) {
+                cachedProfile = profile;
+                lastProfileFetch = Date.now();
+            }
+        } catch (e) {}
+    }
+    return cachedProfile;
+}
+
 app.post('/api/webhook', async (req, res) => {
     let body = req.body;
     console.log("--- INCOMING WEBHOOK ---");
@@ -80,7 +95,27 @@ app.post('/api/webhook', async (req, res) => {
                             const commentId = commentValue.id;
                             const commentText = commentValue.text || "";
                             const mediaId = commentValue.media ? commentValue.media.id : null;
+                            const senderId = commentValue.from ? commentValue.from.id?.toString() : null;
                             const senderHandle = commentValue.from ? (commentValue.from.username || commentValue.from.id) : "user";
+
+                            // 0. Skip reply comments (e.g. public replies posted by page/bot or user replies to comments)
+                            if (commentValue.parent_id) {
+                                console.log(`[Skip] Comment ${commentId} is a reply comment (parent_id: ${commentValue.parent_id}). Skipping.`);
+                                continue;
+                            }
+
+                            // 0b. Skip comments posted by page's own business account
+                            const myProfile = await getCachedProfile();
+                            if (myProfile) {
+                                const myId = myProfile.id?.toString();
+                                const myUsername = myProfile.username?.toLowerCase();
+                                const currentSenderHandle = senderHandle.toLowerCase();
+
+                                if ((myId && senderId === myId) || (myUsername && (currentSenderHandle.includes(myUsername) || currentSenderHandle === myUsername))) {
+                                    console.log(`[Skip] Comment ${commentId} posted by page's own account (@${senderHandle}). Skipping.`);
+                                    continue;
+                                }
+                            }
                             
                             console.log(`Received comment: "${commentText}" by @${senderHandle} on media: ${mediaId}`);
 

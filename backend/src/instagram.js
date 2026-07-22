@@ -14,21 +14,50 @@ class MetaApiError extends Error {
     }
 }
 
+function formatMetaErrorMessage(metaCode, subcode, rawMsg) {
+    const msg = rawMsg || "";
+
+    // Code 100, subcode 2534015 or Arabic/localized "التعليق غير صالح"
+    if (metaCode === 100 && (subcode === 2534015 || msg.includes("غير صالح") || msg.toLowerCase().includes("invalid comment"))) {
+        return "Invalid comment for private reply. The comment may be deleted, already replied to, or older than 7 days.";
+    }
+    if (metaCode === 100) {
+        return "Invalid parameter or expired comment ID. Private replies are only allowed within 7 days of comment creation.";
+    }
+    if (metaCode === 10 || subcode === 2534001 || msg.toLowerCase().includes("privacy")) {
+        return "User's Instagram privacy settings restrict receiving message requests from public accounts.";
+    }
+    if (metaCode === 613 || metaCode === 4 || msg.toLowerCase().includes("rate limit")) {
+        return "Instagram hourly rate limit (250 DMs/hour) exceeded. Remaining messages will queue for retries.";
+    }
+    if (metaCode === 200 || msg.toLowerCase().includes("permission")) {
+        return "Page lacks permission to DM this user or user has not opted into receiving DMs.";
+    }
+
+    // If message contains non-ASCII characters (e.g. Arabic, Chinese, etc.), map to clean English
+    if (/[^\x00-\x7F]/.test(msg)) {
+        return `Instagram API Error (Code ${metaCode || '100'}): Private reply failed for this comment.`;
+    }
+
+    return msg || "Delivery rejected by Instagram Graph API.";
+}
+
 function parseMetaError(error) {
     if (error.response && error.response.data && error.response.data.error) {
         const metaErr = error.response.data.error;
         const statusCode = error.response.status;
         const metaCode = metaErr.code;
         const subcode = metaErr.error_subcode;
-        const message = metaErr.message || error.message;
+        const rawMessage = metaErr.message || error.message;
+        const formattedMessage = formatMetaErrorMessage(metaCode, subcode, rawMessage);
         
         // Transient errors: 5xx server errors, HTTP 429 / Meta Code 613 (rate limit), network timeouts
         const isTransient = statusCode >= 500 || statusCode === 429 || metaCode === 613 || metaCode === 4 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
         
-        return new MetaApiError(message, statusCode, metaCode, subcode, isTransient);
+        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient);
     }
     const isTransient = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || !error.response;
-    return new MetaApiError(error.message, error.response ? error.response.status : 500, null, null, isTransient);
+    return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient);
 }
 
 async function sendPrivateReply(commentId, messageText) {

@@ -62,6 +62,17 @@ export default function Analytics() {
         return true;
     });
 
+    const formatErrorTooltip = (msg) => {
+        if (!msg) return "Delivery rejected by Instagram API.";
+        if (msg.includes("غير صالح") || msg.toLowerCase().includes("invalid comment")) {
+            return "Invalid comment for private reply. The comment may be deleted, already replied to, or older than 7 days.";
+        }
+        if (/[^\x00-\x7F]/.test(msg)) {
+            return "Instagram API Error: Private reply failed for this comment (comment may be deleted or older than 7 days).";
+        }
+        return msg;
+    };
+
     const renderStatusBadge = (exec) => {
         switch (exec.status) {
             case 'accepted_by_meta':
@@ -94,7 +105,7 @@ export default function Analytics() {
                         <XCircle size={12} />
                         Failed
                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
-                            <strong>Meta Error:</strong> {exec.error_message || "Delivery rejected by Instagram API."}
+                            <strong>Meta Error:</strong> {formatErrorTooltip(exec.error_message)}
                         </span>
                     </span>
                 );

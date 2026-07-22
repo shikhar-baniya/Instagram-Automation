@@ -76,6 +76,9 @@ async function initDB() {
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_comment_id ON automation_executions(comment_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_rule_id ON automation_executions(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_status ON automation_executions(status);
+
+                -- Purge self/bot replies that were previously logged
+                DELETE FROM automation_executions WHERE sender_id ILIKE '%bingewithshikhar%' OR comment_text ILIKE 'Thanks for your comment%';
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {
