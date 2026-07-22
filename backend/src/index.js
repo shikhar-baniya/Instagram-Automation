@@ -542,11 +542,14 @@ app.get('/api/executions', async (req, res) => {
         const offset = (page - 1) * limit;
         const status = req.query.status;
 
-        let countQuery = `SELECT COUNT(*) FROM automation_executions e`;
+        // The activity feed is for automations that actually matched a rule.
+        // Received/not-matched comments and ordinary DMs are operational noise.
+        let countQuery = `SELECT COUNT(*) FROM automation_executions e WHERE e.rule_id IS NOT NULL`;
         let dataQuery = `
             SELECT e.*, r.trigger_keyword, r.trigger_type as rule_trigger_type, r.response_message
             FROM automation_executions e
             LEFT JOIN rules r ON e.rule_id = r.id
+            WHERE e.rule_id IS NOT NULL
         `;
         let countParams = [];
         let dataParams = [];
@@ -560,8 +563,8 @@ app.get('/api/executions', async (req, res) => {
         const statuses = statusFilters[status];
 
         if (statuses) {
-            countQuery += ` WHERE e.status = ANY($1)`;
-            dataQuery += ` WHERE e.status = ANY($1)`;
+            countQuery += ` AND e.status = ANY($1)`;
+            dataQuery += ` AND e.status = ANY($1)`;
             countParams.push(statuses);
             dataParams.push(statuses, limit, offset);
             dataQuery += ` ORDER BY e.created_at DESC LIMIT $2 OFFSET $3`;
@@ -592,10 +595,10 @@ app.get('/api/executions', async (req, res) => {
 
 app.get('/api/executions/stats', async (req, res) => {
     try {
-        const totalAttempted = await db.query('SELECT COUNT(*) FROM automation_executions');
-        const accepted = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'accepted_by_meta'");
-        const failed = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'failed'");
-        const pendingClicks = await db.query("SELECT COUNT(*) FROM automation_executions WHERE status = 'pending_button_click'");
+        const totalAttempted = await db.query('SELECT COUNT(*) FROM automation_executions WHERE rule_id IS NOT NULL');
+        const accepted = await db.query("SELECT COUNT(*) FROM automation_executions WHERE rule_id IS NOT NULL AND status = 'accepted_by_meta'");
+        const failed = await db.query("SELECT COUNT(*) FROM automation_executions WHERE rule_id IS NOT NULL AND status = 'failed'");
+        const pendingClicks = await db.query("SELECT COUNT(*) FROM automation_executions WHERE rule_id IS NOT NULL AND status = 'pending_button_click'");
 
         const attemptedCount = parseInt(totalAttempted.rows[0].count) || 0;
         const acceptedCount = parseInt(accepted.rows[0].count) || 0;

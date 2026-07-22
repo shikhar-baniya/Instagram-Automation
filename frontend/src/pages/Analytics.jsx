@@ -224,12 +224,12 @@ export default function Analytics() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h2 className="text-xl font-bold text-white/90">Recent Automation Activity</h2>
-                        <p className="text-sm text-gray-400">All automation triggers logged across Comments, DM Keywords, and Story Replies.</p>
+                        <p className="text-sm text-gray-400">Only interactions that matched an automation rule appear here.</p>
                     </div>
 
                     {/* Filter Tabs */}
                     <div className="flex flex-wrap gap-2">
-                        {['all', 'sent', 'pending', 'failed', 'skipped'].map(filterKey => (
+                        {['all', 'sent', 'pending', 'failed'].map(filterKey => (
                             <button
                                 key={filterKey}
                                 onClick={() => { setActiveStatusFilter(filterKey); setCurrentPage(1); }}
