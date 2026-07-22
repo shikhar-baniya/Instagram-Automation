@@ -3,14 +3,40 @@ const axios = require('axios');
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GRAPH_API_VERSION = 'v25.0'; 
 
+class MetaApiError extends Error {
+    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient) {
+        super(message);
+        this.name = 'MetaApiError';
+        this.statusCode = statusCode;
+        this.metaErrorCode = metaErrorCode;
+        this.metaErrorSubcode = metaErrorSubcode;
+        this.isTransient = isTransient;
+    }
+}
+
+function parseMetaError(error) {
+    if (error.response && error.response.data && error.response.data.error) {
+        const metaErr = error.response.data.error;
+        const statusCode = error.response.status;
+        const metaCode = metaErr.code;
+        const subcode = metaErr.error_subcode;
+        const message = metaErr.message || error.message;
+        
+        // Transient errors: 5xx server errors, HTTP 429 / Meta Code 613 (rate limit), network timeouts
+        const isTransient = statusCode >= 500 || statusCode === 429 || metaCode === 613 || metaCode === 4 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
+        
+        return new MetaApiError(message, statusCode, metaCode, subcode, isTransient);
+    }
+    const isTransient = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || !error.response;
+    return new MetaApiError(error.message, error.response ? error.response.status : 500, null, null, isTransient);
+}
+
 async function sendPrivateReply(commentId, messageText) {
     if (!PAGE_ACCESS_TOKEN) {
-        console.error("Missing PAGE_ACCESS_TOKEN. Please add it to your .env file.");
-        return;
+        throw new MetaApiError("Missing PAGE_ACCESS_TOKEN. Please add it to your .env file.", 401, null, null, false);
     }
 
     try {
-        // Send a private reply to a specific comment using the Instagram Graph API
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
         const payload = {
             recipient: {
@@ -30,7 +56,9 @@ async function sendPrivateReply(commentId, messageText) {
         console.log(`Successfully sent reply to comment ${commentId}`);
         return response.data;
     } catch (error) {
-        console.error('Error sending private reply:', error.response ? error.response.data : error.message);
+        const parsed = parseMetaError(error);
+        console.error('Error sending private reply:', parsed.message);
+        throw parsed;
     }
 }
 
@@ -73,7 +101,9 @@ async function getPaginatedPosts(afterCursor) {
 }
 
 async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ruleId) {
-    if (!PAGE_ACCESS_TOKEN) return;
+    if (!PAGE_ACCESS_TOKEN) {
+        throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
+    }
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
         const payload = {
@@ -95,15 +125,20 @@ async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ru
                 }
             }
         };
-        await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
+        const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent opening DM with button to comment ${commentId}`);
+        return response.data;
     } catch (error) {
-        console.error('Error sending private reply with button:', error.response ? error.response.data : error.message);
+        const parsed = parseMetaError(error);
+        console.error('Error sending private reply with button:', parsed.message);
+        throw parsed;
     }
 }
 
 async function sendButtonTemplate(recipientId, messageText, buttonText, payloadString) {
-    if (!PAGE_ACCESS_TOKEN) return;
+    if (!PAGE_ACCESS_TOKEN) {
+        throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
+    }
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
         const payload = {
@@ -125,25 +160,33 @@ async function sendButtonTemplate(recipientId, messageText, buttonText, payloadS
                 }
             }
         };
-        await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
+        const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent button template to ${recipientId}`);
+        return response.data;
     } catch (error) {
-        console.error('Error sending button template:', error.response ? error.response.data : error.message);
+        const parsed = parseMetaError(error);
+        console.error('Error sending button template:', parsed.message);
+        throw parsed;
     }
 }
 
 async function sendMessage(recipientId, messageText) {
-    if (!PAGE_ACCESS_TOKEN) return;
+    if (!PAGE_ACCESS_TOKEN) {
+        throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
+    }
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
         const payload = {
             recipient: { id: recipientId },
             message: { text: messageText }
         };
-        await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
+        const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent message to ${recipientId}`);
+        return response.data;
     } catch (error) {
-        console.error('Error sending message:', error.response ? error.response.data : error.message);
+        const parsed = parseMetaError(error);
+        console.error('Error sending message:', parsed.message);
+        throw parsed;
     }
 }
 
@@ -166,7 +209,9 @@ async function checkFollowStatus(instagramScopedUserId) {
 }
 
 async function sendUrlButtonTemplate(recipientId, messageText, buttonText, urlString) {
-    if (!PAGE_ACCESS_TOKEN) return;
+    if (!PAGE_ACCESS_TOKEN) {
+        throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
+    }
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
         const payload = {
@@ -188,10 +233,13 @@ async function sendUrlButtonTemplate(recipientId, messageText, buttonText, urlSt
                 }
             }
         };
-        await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
+        const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent url button template to ${recipientId}`);
+        return response.data;
     } catch (error) {
-        console.error('Error sending url button template:', error.response ? error.response.data : error.message);
+        const parsed = parseMetaError(error);
+        console.error('Error sending url button template:', parsed.message);
+        throw parsed;
     }
 }
 
@@ -203,8 +251,9 @@ async function replyToComment(commentId, messageText) {
             message: messageText,
             access_token: PAGE_ACCESS_TOKEN
         };
-        await axios.post(url, payload);
+        const response = await axios.post(url, payload);
         console.log(`Successfully publicly replied to comment ${commentId}`);
+        return response.data;
     } catch (error) {
         console.error('Error replying to comment:', error.response ? error.response.data : error.message);
     }
@@ -251,7 +300,6 @@ async function getInsights(igUserId) {
         const until = Math.floor(Date.now() / 1000);
         const since = until - (30 * 24 * 60 * 60);
         
-        // Fetch reach and profile_views
         const reachRes = await axios.get(insightsUrl, {
             params: {
                 metric: 'reach,profile_views',
@@ -262,7 +310,6 @@ async function getInsights(igUserId) {
             }
         });
         
-        // Fetch follower_count
         const followerRes = await axios.get(insightsUrl, {
             params: {
                 metric: 'follower_count',
@@ -283,4 +330,4 @@ async function getInsights(igUserId) {
     }
 }
 
-module.exports = { sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile, setIceBreakers, getInsights };
+module.exports = { MetaApiError, sendPrivateReply, sendPrivateReplyWithButton, sendButtonTemplate, sendUrlButtonTemplate, sendMessage, getRecentPosts, getPaginatedPosts, checkFollowStatus, replyToComment, getUserProfile, setIceBreakers, getInsights };

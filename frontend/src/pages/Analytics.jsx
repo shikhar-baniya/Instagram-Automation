@@ -1,115 +1,312 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Image as ImageIcon, Activity } from 'lucide-react';
+import { Users, Image as ImageIcon, Activity, AlertTriangle, RefreshCw, CheckCircle2, Clock, HelpCircle, XCircle, Send, MessageSquare } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export default function Analytics() {
     const [data, setData] = useState(null);
+    const [executions, setExecutions] = useState([]);
+    const [execStats, setExecStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [activeStatusFilter, setActiveStatusFilter] = useState('all');
 
     useEffect(() => {
-        fetchAnalytics();
+        fetchAllData();
     }, []);
 
-    const fetchAnalytics = async () => {
+    const fetchAllData = async () => {
         try {
-            const res = await axios.get(`${API_BASE}/analytics`);
-            setData(res.data);
+            setRefreshing(true);
+            const [analyticsRes, executionsRes, statsRes] = await Promise.allSettled([
+                axios.get(`${API_BASE}/analytics`),
+                axios.get(`${API_BASE}/executions?limit=50`),
+                axios.get(`${API_BASE}/executions/stats`)
+            ]);
+
+            if (analyticsRes.status === 'fulfilled') setData(analyticsRes.value.data);
+            if (executionsRes.status === 'fulfilled') setExecutions(executionsRes.value.data);
+            if (statsRes.status === 'fulfilled') setExecStats(statsRes.value.data);
+
             setLoading(false);
+            setRefreshing(false);
         } catch (err) {
             console.error(err);
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
     if (loading) {
-        return <div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div></div>;
+        return (
+            <div className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        );
     }
 
-    if (!data) return <div className="text-center text-red-400 mt-10">Failed to load analytics. Please check Instagram permissions.</div>;
-
-    const chartData = data.posts.map((post, i) => ({
-        name: `Post ${i+1}`,
+    const chartData = data?.posts ? data.posts.map((post, i) => ({
+        name: `Post ${i + 1}`,
         likes: post.like_count || 0,
         comments: post.comments_count || 0
-    })).reverse();
+    })).reverse() : [];
+
+    const filteredExecutions = executions.filter(exec => {
+        if (activeStatusFilter === 'all') return true;
+        if (activeStatusFilter === 'sent') return exec.status === 'accepted_by_meta';
+        if (activeStatusFilter === 'pending') return exec.status === 'pending_button_click';
+        if (activeStatusFilter === 'failed') return exec.status === 'failed';
+        if (activeStatusFilter === 'skipped') return exec.status === 'not_matched';
+        return true;
+    });
+
+    const renderStatusBadge = (exec) => {
+        switch (exec.status) {
+            case 'accepted_by_meta':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
+                        <CheckCircle2 size={12} />
+                        ✓ Sent
+                    </span>
+                );
+            case 'pending_button_click':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20 shadow-sm">
+                        <Clock size={12} />
+                        Pending user to click button
+                    </span>
+                );
+            case 'not_matched':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/10 text-gray-400 border border-gray-500/20 shadow-sm group relative cursor-help">
+                        <HelpCircle size={12} />
+                        Skipped
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-black/90 border border-white/10 text-[11px] text-gray-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
+                            No keyword rule matched this comment text.
+                        </span>
+                    </span>
+                );
+            case 'failed':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm group relative cursor-help">
+                        <XCircle size={12} />
+                        Failed
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
+                            <strong>Meta Error:</strong> {exec.error_message || "Delivery rejected by Instagram API."}
+                        </span>
+                    </span>
+                );
+            default:
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-sm">
+                        <RefreshCw size={12} className="animate-spin" />
+                        Processing...
+                    </span>
+                );
+        }
+    };
 
     return (
-        <div className="space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight mb-2">Analytics</h1>
-                <p className="text-text-secondary">Track your account growth and meme performance.</p>
+        <div className="space-y-8 pb-16">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight mb-2 text-white/90">Analytics & Activity</h1>
+                    <p className="text-gray-400">Track account growth, automation performance, and DM delivery verification.</p>
+                </div>
+                <button
+                    onClick={fetchAllData}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all shadow-sm"
+                >
+                    <RefreshCw size={16} className={refreshing ? "animate-spin text-blue-400" : "text-gray-400"} />
+                    {refreshing ? "Refreshing..." : "Refresh Logs"}
+                </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-panel p-6 rounded-2xl border border-border flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent">
+            {/* Troubleshooting Alert Banner */}
+            <div className="macos-glass-panel p-5 rounded-3xl border border-amber-500/20 bg-amber-500/5 text-sm text-gray-300 space-y-2 shadow-sm">
+                <div className="flex items-center gap-2 font-bold text-amber-400">
+                    <AlertTriangle size={18} />
+                    Troubleshooting Failed DMs
+                </div>
+                <p className="text-xs text-gray-400">
+                    Hover over a "Failed" or "Skipped" status badge in the log below to see the specific error message from Instagram. Common reasons include:
+                </p>
+                <ul className="list-disc pl-5 text-xs text-gray-300 space-y-1">
+                    <li><strong>User doesn't follow / Privacy settings:</strong> User restricts message requests from public pages. Enable "Ask to follow" or "Public reply" in your settings.</li>
+                    <li><strong>Rate limit exceeded:</strong> Instagram's 250 DMs/hour limit was hit. Remaining messages queue automatically for retries.</li>
+                    <li><strong>7-day window expired:</strong> The user must engage with you again (comment/reply) to become eligible for DMs.</li>
+                </ul>
+            </div>
+
+            {/* Account & DM Metrics Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 flex items-center gap-4 shadow-sm">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shadow-inner">
                         <Users size={24} />
                     </div>
                     <div>
-                        <p className="text-text-secondary text-sm">Total Followers</p>
-                        <p className="text-2xl font-bold">{data.profile.followers_count?.toLocaleString() || 0}</p>
-                    </div>
-                </div>
-                
-                <div className="bg-panel p-6 rounded-2xl border border-border flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500">
-                        <ImageIcon size={24} />
-                    </div>
-                    <div>
-                        <p className="text-text-secondary text-sm">Total Posts</p>
-                        <p className="text-2xl font-bold">{data.profile.media_count?.toLocaleString() || 0}</p>
+                        <p className="text-gray-400 text-xs font-medium">Total Followers</p>
+                        <p className="text-2xl font-bold text-white/90">{data?.profile?.followers_count?.toLocaleString() || 0}</p>
                     </div>
                 </div>
 
-                <div className="bg-panel p-6 rounded-2xl border border-border flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-500">
-                        <Activity size={24} />
+                <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 flex items-center gap-4 shadow-sm">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-inner">
+                        <Send size={24} />
                     </div>
                     <div>
-                        <p className="text-text-secondary text-sm">Avg. Engagement</p>
-                        <p className="text-2xl font-bold">{data.metrics.avgEngagement}</p>
+                        <p className="text-gray-400 text-xs font-medium">DMs Attempted</p>
+                        <p className="text-2xl font-bold text-white/90">{execStats?.total_attempted ?? (data?.metrics?.totalLikes || 0)}</p>
+                    </div>
+                </div>
+
+                <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 flex items-center gap-4 shadow-sm">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shadow-inner">
+                        <CheckCircle2 size={24} />
+                    </div>
+                    <div>
+                        <p className="text-gray-400 text-xs font-medium">DM Delivery Success</p>
+                        <p className="text-2xl font-bold text-emerald-400">{execStats?.success_rate ? `${execStats.success_rate}%` : "100%"}</p>
+                    </div>
+                </div>
+
+                <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 flex items-center gap-4 shadow-sm">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-inner">
+                        <MessageSquare size={24} />
+                    </div>
+                    <div>
+                        <p className="text-gray-400 text-xs font-medium">Pending / Skipped</p>
+                        <p className="text-2xl font-bold text-amber-300">{(execStats?.pending_clicks || 0) + (execStats?.failed_count || 0)}</p>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-panel p-6 rounded-2xl border border-border">
-                <h2 className="text-lg font-bold mb-6">Recent Post Engagement (Likes vs Comments)</h2>
+            {/* Recent Automation Activity Log Table */}
+            <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-xl font-bold text-white/90">Recent Automation Activity</h2>
+                        <p className="text-sm text-gray-400">DMs sent by your automations. This log helps you verify that your funnels are working correctly and troubleshoot any issues.</p>
+                    </div>
+
+                    {/* Filter Tabs */}
+                    <div className="flex flex-wrap gap-2">
+                        {['all', 'sent', 'pending', 'failed', 'skipped'].map(filterKey => (
+                            <button
+                                key={filterKey}
+                                onClick={() => setActiveStatusFilter(filterKey)}
+                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                    activeStatusFilter === filterKey
+                                        ? 'bg-white text-black border-white shadow-sm'
+                                        : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                                }`}
+                            >
+                                {filterKey.charAt(0).toUpperCase() + filterKey.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="border-b border-white/10 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
+                                <th className="py-3 px-4">User & Comment</th>
+                                <th className="py-3 px-4">Automation</th>
+                                <th className="py-3 px-4">Public Reply</th>
+                                <th className="py-3 px-4">DM Status</th>
+                                <th className="py-3 px-4">Date & Time</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-sm">
+                            {filteredExecutions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="py-10 text-center text-gray-500 text-sm">
+                                        No automation activity logged yet. Once comments arrive, execution history will appear here.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredExecutions.map(exec => (
+                                    <tr key={exec.id} className="hover:bg-white/[0.02] transition-colors">
+                                        <td className="py-4 px-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-xs font-bold text-white shadow-inner">
+                                                    {(exec.sender_id || "@user").substring(1, 3).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-white/90 text-sm">{exec.sender_id || "@user"}</p>
+                                                    <p className="text-xs text-gray-400 italic">"{exec.comment_text || ""}"</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-4">
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-gray-300">
+                                                {exec.trigger_keyword ? `Comment to DM (${exec.trigger_keyword})` : "Comment to DM"}
+                                            </span>
+                                        </td>
+                                        <td className="py-4 px-4 text-xs text-gray-400">
+                                            {exec.public_reply_sent ? <span className="text-emerald-400 font-medium">✓ Replied</span> : "-"}
+                                        </td>
+                                        <td className="py-4 px-4">
+                                            {renderStatusBadge(exec)}
+                                        </td>
+                                        <td className="py-4 px-4 text-xs text-gray-400">
+                                            <div className="flex items-center gap-1.5">
+                                                <Clock size={12} className="text-gray-500" />
+                                                {exec.created_at ? new Date(exec.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Post Engagement Chart */}
+            <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 shadow-sm">
+                <h2 className="text-lg font-bold mb-6 text-white/90">Recent Post Engagement (Likes vs Comments)</h2>
                 <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                             <XAxis dataKey="name" stroke="#888" />
                             <YAxis stroke="#888" />
-                            <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                            <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} />
                             <Legend />
-                            <Bar dataKey="likes" fill="#caff00" name="Likes" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="comments" fill="#3b82f6" name="Comments" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="likes" fill="#3b82f6" name="Likes" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="comments" fill="#a855f7" name="Comments" radius={[6, 6, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
             </div>
             
-            <div className="bg-panel p-6 rounded-2xl border border-border">
-                <h2 className="text-lg font-bold mb-4">Top Recent Posts</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                    {data.posts.map(post => (
-                        <div key={post.id} className="bg-black/40 rounded-xl overflow-hidden border border-border">
-                            <div className="aspect-[3/4] relative">
-                                <img src={post.thumbnail_url || post.media_url} className="w-full h-full object-cover" />
-                            </div>
-                            <div className="p-3">
-                                <div className="flex justify-between text-xs font-semibold">
-                                    <span className="text-accent">{post.like_count || 0} Likes</span>
-                                    <span className="text-blue-400">{post.comments_count || 0} Cmts</span>
+            {/* Top Recent Posts */}
+            {data?.posts && data.posts.length > 0 && (
+                <div className="macos-glass-panel p-6 rounded-3xl border border-white/5 shadow-sm">
+                    <h2 className="text-lg font-bold mb-4 text-white/90">Top Recent Posts</h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                        {data.posts.map(post => (
+                            <div key={post.id} className="bg-black/30 rounded-2xl overflow-hidden border border-white/5 hover:border-white/20 transition-all shadow-sm">
+                                <div className="aspect-[3/4] relative">
+                                    <img src={post.thumbnail_url || post.media_url} className="w-full h-full object-cover" />
+                                </div>
+                                <div className="p-3">
+                                    <div className="flex justify-between text-xs font-semibold">
+                                        <span className="text-blue-400">{post.like_count || 0} Likes</span>
+                                        <span className="text-purple-400">{post.comments_count || 0} Cmts</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
