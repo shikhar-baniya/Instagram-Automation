@@ -129,7 +129,7 @@ async function getPaginatedPosts(afterCursor) {
     }
 }
 
-async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ruleId) {
+async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ruleId, customPayload = null) {
     if (!PAGE_ACCESS_TOKEN) {
         throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
     }
@@ -147,7 +147,7 @@ async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ru
                             {
                                 type: "postback",
                                 title: buttonText,
-                                payload: `RULE_${ruleId}`
+                                payload: customPayload || `RULE_${ruleId}`
                             }
                         ]
                     }

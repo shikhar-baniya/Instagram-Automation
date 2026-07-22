@@ -213,7 +213,8 @@ app.post('/api/webhook', async (req, res) => {
                                 let hasButton = false;
                                 if (matchedRule.opening_message && matchedRule.button_text) {
                                     hasButton = true;
-                                    await sendWithRetry(() => sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id));
+                                    const buttonPayload = executionId ? `RULE_${matchedRule.id}_EXEC_${executionId}` : `RULE_${matchedRule.id}`;
+                                    await sendWithRetry(() => sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload));
                                 } else {
                                     await sendWithRetry(() => sendPrivateReply(commentId, matchedRule.response_message));
                                 }
@@ -258,60 +259,106 @@ app.post('/api/webhook', async (req, res) => {
 
                         if (messageText) {
                             const senderId = messagingEvent.sender.id;
-                            const triggerTypes = isStoryReply ? ['story_reply'] : ['dm_keyword', 'ice_breaker'];
-                            console.log(`Received DM message: ${messageText} from ${senderId}`);
+                            const mid = (messagingEvent.message && messagingEvent.message.mid) ? messagingEvent.message.mid : `DM_${Date.now()}_${senderId}`;
+                            const triggerType = isStoryReply ? 'story_reply' : 'dm_keyword';
 
-                            const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = ANY($1)', [triggerTypes]);
-                            const rules = result.rows;
-                            let matchedRule = null;
+                            console.log(`Received DM message: "${messageText}" from ${senderId}`);
 
-                            for (const rule of rules) {
-                                if (isStoryReply && rule.target_story_type !== 'any') continue;
+                            // Check idempotency for DM
+                            const existingDm = await db.query('SELECT * FROM automation_executions WHERE comment_id = $1', [mid]);
+                            if (existingDm.rows.length === 0) {
+                                let dmExecId = null;
+                                const normalizedInput = normalizeText(messageText);
 
-                                if (rule.trigger_type === 'ice_breaker') {
-                                    let configArray = rule.ice_breakers_config;
-                                    if (typeof configArray === 'string') configArray = JSON.parse(configArray);
-                                    if (configArray) {
-                                        for (let item of configArray) {
-                                            if (messageText.trim().toLowerCase() === item.question.toLowerCase()) {
-                                                matchedRule = {
-                                                    ...rule,
-                                                    response_message: item.response,
-                                                    opening_message: null,
-                                                    button_text: null
-                                                };
-                                                break;
+                                try {
+                                    const insRes = await db.query(
+                                        `INSERT INTO automation_executions (comment_id, sender_id, comment_text, normalized_comment_text, trigger_type, status) 
+                                         VALUES ($1, $2, $3, $4, $5, 'received') RETURNING id`,
+                                        [mid, `@user_${senderId.slice(-4)}`, messageText, normalizedInput, triggerType]
+                                    );
+                                    dmExecId = insRes.rows[0]?.id;
+                                } catch (e) {
+                                    console.error("Failed to log DM execution record:", e.message);
+                                }
+
+                                const triggerTypes = isStoryReply ? ['story_reply'] : ['dm_keyword', 'ice_breaker'];
+                                const result = await db.query('SELECT * FROM rules WHERE is_active = true AND trigger_type = ANY($1)', [triggerTypes]);
+                                const rules = result.rows;
+                                let matchedRule = null;
+
+                                for (const rule of rules) {
+                                    if (isStoryReply && rule.target_story_type !== 'any') continue;
+
+                                    if (rule.trigger_type === 'ice_breaker') {
+                                        let configArray = rule.ice_breakers_config;
+                                        if (typeof configArray === 'string') configArray = JSON.parse(configArray);
+                                        if (configArray) {
+                                            for (let item of configArray) {
+                                                if (messageText.trim().toLowerCase() === item.question.toLowerCase() || normalizeText(item.question) === normalizedInput) {
+                                                    matchedRule = {
+                                                        ...rule,
+                                                        response_message: item.response,
+                                                        opening_message: null,
+                                                        button_text: null
+                                                    };
+                                                    break;
+                                                }
                                             }
                                         }
+                                        if (matchedRule) break;
+                                        continue;
                                     }
-                                    if (matchedRule) break;
-                                    continue;
+
+                                    const normalizedKeyword = normalizeText(rule.trigger_keyword);
+
+                                    if (rule.match_type === 'any') {
+                                        matchedRule = rule;
+                                        break;
+                                    } else if (rule.match_type === 'exact') {
+                                        if (messageText.trim().toLowerCase() === rule.trigger_keyword.toLowerCase() || (normalizedKeyword && normalizedInput === normalizedKeyword)) {
+                                            matchedRule = rule;
+                                            break;
+                                        }
+                                    } else if (rule.match_type === 'partial') {
+                                        if (messageText.toLowerCase().includes(rule.trigger_keyword.toLowerCase()) || (normalizedKeyword && normalizedInput.includes(normalizedKeyword))) {
+                                            matchedRule = rule;
+                                            break;
+                                        }
+                                    }
                                 }
 
-                                if (rule.match_type === 'any') {
-                                    matchedRule = rule;
-                                    break;
-                                } else if (rule.match_type === 'exact' && messageText.trim().toLowerCase() === rule.trigger_keyword.toLowerCase()) {
-                                    matchedRule = rule;
-                                    break;
-                                } else if (rule.match_type === 'partial' && messageText.toLowerCase().includes(rule.trigger_keyword.toLowerCase())) {
-                                    matchedRule = rule;
-                                    break;
-                                }
-                            }
-
-                            if (matchedRule) {
-                                console.log(`Matched rule ${matchedRule.id} for DM`);
-                                try {
-                                    if (matchedRule.opening_message && matchedRule.button_text) {
-                                        await sendWithRetry(() => sendButtonTemplate(senderId, matchedRule.opening_message, matchedRule.button_text, `RULE_${matchedRule.id}`));
-                                    } else {
-                                        await sendWithRetry(() => sendMessage(senderId, matchedRule.response_message));
+                                if (!matchedRule) {
+                                    if (dmExecId) {
+                                        await db.query(`UPDATE automation_executions SET status = 'not_matched', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [dmExecId]);
                                     }
-                                    await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
-                                } catch (e) {
-                                    console.error("Error sending DM:", e.message);
-                                    await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
+                                } else {
+                                    console.log(`Matched rule ${matchedRule.id} for DM`);
+                                    if (dmExecId) {
+                                        await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, dmExecId]);
+                                    }
+
+                                    try {
+                                        let hasButton = false;
+                                        if (matchedRule.opening_message && matchedRule.button_text) {
+                                            hasButton = true;
+                                            const buttonPayload = dmExecId ? `RULE_${matchedRule.id}_EXEC_${dmExecId}` : `RULE_${matchedRule.id}`;
+                                            await sendWithRetry(() => sendButtonTemplate(senderId, matchedRule.opening_message, matchedRule.button_text, buttonPayload));
+                                        } else {
+                                            await sendWithRetry(() => sendMessage(senderId, matchedRule.response_message));
+                                        }
+
+                                        const finalStatus = hasButton ? 'pending_button_click' : 'accepted_by_meta';
+                                        if (dmExecId) {
+                                            await db.query(`UPDATE automation_executions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [finalStatus, dmExecId]);
+                                        }
+                                        await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
+                                    } catch (err) {
+                                        console.error("Error sending DM:", err.message);
+                                        if (dmExecId) {
+                                            await db.query(`UPDATE automation_executions SET status = 'failed', error_message = $1, meta_error_code = $2, is_transient_error = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`, [err.message, err.metaErrorCode?.toString() || null, err.isTransient || false, dmExecId]);
+                                        }
+                                        await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
+                                    }
                                 }
                             }
                         }
@@ -321,7 +368,13 @@ app.post('/api/webhook', async (req, res) => {
                             console.log(`Received postback/button click: ${payload} from user ${senderId}`);
                             
                             if (payload.startsWith('RULE_')) {
-                                const ruleId = parseInt(payload.replace('RULE_', ''), 10);
+                                const parts = payload.split('_');
+                                const ruleId = parseInt(parts[1], 10);
+                                let execId = null;
+                                if (parts.length >= 4 && parts[2] === 'EXEC') {
+                                    execId = parseInt(parts[3], 10);
+                                }
+
                                 const result = await db.query('SELECT * FROM rules WHERE id = $1', [ruleId]);
                                 const rule = result.rows[0];
                                 
@@ -343,8 +396,12 @@ app.post('/api/webhook', async (req, res) => {
                                                 await sendMessage(senderId, rule.response_message);
                                             }
                                             
-                                            // Update execution status if comment execution exists for this user
-                                            await db.query(`UPDATE automation_executions SET status = 'accepted_by_meta', updated_at = CURRENT_TIMESTAMP WHERE rule_id = $1 AND sender_id = $2 AND status = 'pending_button_click'`, [rule.id, `@${senderId}`]);
+                                            // Update execution status deterministically!
+                                            if (execId) {
+                                                await db.query(`UPDATE automation_executions SET status = 'accepted_by_meta', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [execId]);
+                                            } else {
+                                                await db.query(`UPDATE automation_executions SET status = 'accepted_by_meta', updated_at = CURRENT_TIMESTAMP WHERE rule_id = $1 AND status = 'pending_button_click'`, [rule.id]);
+                                            }
                                             await db.query('UPDATE rules SET clicks = clicks + 1 WHERE id = $1', [rule.id]);
                                         } catch (e) {
                                             console.error("Error sending postback response:", e.message);
@@ -438,29 +495,46 @@ app.get('/api/stats', async (req, res) => {
 
 app.get('/api/executions', async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.query.offset) || 0;
+        const limit = parseInt(req.query.limit) || 10;
+        const page = parseInt(req.query.page) || 1;
+        const offset = (page - 1) * limit;
         const status = req.query.status;
 
-        let query = `
+        let countQuery = `SELECT COUNT(*) FROM automation_executions e`;
+        let dataQuery = `
             SELECT e.*, r.trigger_keyword, r.trigger_type as rule_trigger_type, r.response_message
             FROM automation_executions e
             LEFT JOIN rules r ON e.rule_id = r.id
         `;
-        let params = [];
+        let countParams = [];
+        let dataParams = [];
 
         if (status && status !== 'all') {
-            query += ` WHERE e.status = $1`;
-            params.push(status);
-            query += ` ORDER BY e.created_at DESC LIMIT $2 OFFSET $3`;
-            params.push(limit, offset);
+            countQuery += ` WHERE e.status = $1`;
+            dataQuery += ` WHERE e.status = $1`;
+            countParams.push(status);
+            dataParams.push(status, limit, offset);
+            dataQuery += ` ORDER BY e.created_at DESC LIMIT $2 OFFSET $3`;
         } else {
-            query += ` ORDER BY e.created_at DESC LIMIT $1 OFFSET $2`;
-            params.push(limit, offset);
+            dataParams.push(limit, offset);
+            dataQuery += ` ORDER BY e.created_at DESC LIMIT $1 OFFSET $2`;
         }
 
-        const result = await db.query(query, params);
-        res.json(result.rows);
+        const [countRes, dataRes] = await Promise.all([
+            db.query(countQuery, countParams),
+            db.query(dataQuery, dataParams)
+        ]);
+
+        const total = parseInt(countRes.rows[0].count) || 0;
+        const totalPages = Math.ceil(total / limit) || 1;
+
+        res.json({
+            executions: dataRes.rows,
+            total,
+            page,
+            limit,
+            totalPages
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

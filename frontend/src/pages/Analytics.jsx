@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Image as ImageIcon, Activity, AlertTriangle, RefreshCw, CheckCircle2, Clock, HelpCircle, XCircle, Send, MessageSquare } from 'lucide-react';
+import { Users, Image as ImageIcon, Activity, AlertTriangle, RefreshCw, CheckCircle2, Clock, HelpCircle, XCircle, Send, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
@@ -13,21 +13,38 @@ export default function Analytics() {
     const [refreshing, setRefreshing] = useState(false);
     const [activeStatusFilter, setActiveStatusFilter] = useState('all');
 
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
+
     useEffect(() => {
         fetchAllData();
-    }, []);
+    }, [currentPage, pageSize, activeStatusFilter]);
 
     const fetchAllData = async () => {
         try {
             setRefreshing(true);
             const [analyticsRes, executionsRes, statsRes] = await Promise.allSettled([
                 axios.get(`${API_BASE}/analytics`),
-                axios.get(`${API_BASE}/executions?limit=50`),
+                axios.get(`${API_BASE}/executions?page=${currentPage}&limit=${pageSize}&status=${activeStatusFilter}`),
                 axios.get(`${API_BASE}/executions/stats`)
             ]);
 
             if (analyticsRes.status === 'fulfilled') setData(analyticsRes.value.data);
-            if (executionsRes.status === 'fulfilled') setExecutions(executionsRes.value.data);
+            if (executionsRes.status === 'fulfilled') {
+                const execData = executionsRes.value.data;
+                if (Array.isArray(execData)) {
+                    setExecutions(execData);
+                    setTotalRecords(execData.length);
+                    setTotalPages(1);
+                } else {
+                    setExecutions(execData.executions || []);
+                    setTotalRecords(execData.total || 0);
+                    setTotalPages(execData.totalPages || 1);
+                }
+            }
             if (statsRes.status === 'fulfilled') setExecStats(statsRes.value.data);
 
             setLoading(false);
@@ -53,24 +70,29 @@ export default function Analytics() {
         comments: post.comments_count || 0
     })).reverse() : [];
 
-    const filteredExecutions = executions.filter(exec => {
-        if (activeStatusFilter === 'all') return true;
-        if (activeStatusFilter === 'sent') return exec.status === 'accepted_by_meta';
-        if (activeStatusFilter === 'pending') return exec.status === 'pending_button_click';
-        if (activeStatusFilter === 'failed') return exec.status === 'failed';
-        if (activeStatusFilter === 'skipped') return exec.status === 'not_matched';
-        return true;
-    });
-
-    const formatErrorTooltip = (msg) => {
+    const formatErrorTooltip = (msg, code) => {
         if (!msg) return "Delivery rejected by Instagram API.";
-        if (msg.includes("غير صالح") || msg.toLowerCase().includes("invalid comment")) {
-            return "Invalid comment for private reply. The comment may be deleted, already replied to, or older than 7 days.";
+        if (msg.includes("غير صالح") || msg.toLowerCase().includes("invalid comment") || code === '100') {
+            return "Instagram rejected private reply for this comment. Causes: (1) User already received a DM for a prior comment on this post, (2) User privacy settings restrict DMs, or (3) Instagram spam filter auto-hid the comment.";
         }
         if (/[^\x00-\x7F]/.test(msg)) {
-            return "Instagram API Error: Private reply failed for this comment (comment may be deleted or older than 7 days).";
+            return "Instagram API Error: Private reply failed for this comment.";
         }
         return msg;
+    };
+
+    const renderTriggerBadge = (exec) => {
+        const trigger = exec.trigger_type || exec.rule_trigger_type || 'post_comment';
+        switch (trigger) {
+            case 'story_reply':
+                return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-purple-500/10 border border-purple-500/20 text-purple-300">Story Reply ({exec.trigger_keyword || 'Story'})</span>;
+            case 'dm_keyword':
+                return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300">DM Keyword ({exec.trigger_keyword || 'DM'})</span>;
+            case 'ice_breaker':
+                return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">Ice Breaker</span>;
+            default:
+                return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-gray-300">{exec.trigger_keyword ? `Comment to DM (${exec.trigger_keyword})` : "Comment to DM"}</span>;
+        }
     };
 
     const renderStatusBadge = (exec) => {
@@ -95,7 +117,7 @@ export default function Analytics() {
                         <HelpCircle size={12} />
                         Skipped
                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-black/90 border border-white/10 text-[11px] text-gray-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
-                            No keyword rule matched this comment text.
+                            No keyword rule matched this trigger text.
                         </span>
                     </span>
                 );
@@ -104,8 +126,8 @@ export default function Analytics() {
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm group relative cursor-help">
                         <XCircle size={12} />
                         Failed
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
-                            <strong>Meta Error:</strong> {formatErrorTooltip(exec.error_message)}
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
+                            <strong>Meta Error {exec.meta_error_code ? `(Code ${exec.meta_error_code})` : ""}:</strong> {formatErrorTooltip(exec.error_message, exec.meta_error_code)}
                         </span>
                     </span>
                 );
@@ -200,7 +222,7 @@ export default function Analytics() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h2 className="text-xl font-bold text-white/90">Recent Automation Activity</h2>
-                        <p className="text-sm text-gray-400">DMs sent by your automations. This log helps you verify that your funnels are working correctly and troubleshoot any issues.</p>
+                        <p className="text-sm text-gray-400">All automation triggers logged across Comments, DM Keywords, and Story Replies.</p>
                     </div>
 
                     {/* Filter Tabs */}
@@ -208,7 +230,7 @@ export default function Analytics() {
                         {['all', 'sent', 'pending', 'failed', 'skipped'].map(filterKey => (
                             <button
                                 key={filterKey}
-                                onClick={() => setActiveStatusFilter(filterKey)}
+                                onClick={() => { setActiveStatusFilter(filterKey); setCurrentPage(1); }}
                                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                                     activeStatusFilter === filterKey
                                         ? 'bg-white text-black border-white shadow-sm'
@@ -226,7 +248,7 @@ export default function Analytics() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-white/10 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
-                                <th className="py-3 px-4">User & Comment</th>
+                                <th className="py-3 px-4">User & Trigger Content</th>
                                 <th className="py-3 px-4">Automation</th>
                                 <th className="py-3 px-4">Public Reply</th>
                                 <th className="py-3 px-4">DM Status</th>
@@ -234,14 +256,14 @@ export default function Analytics() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5 text-sm">
-                            {filteredExecutions.length === 0 ? (
+                            {executions.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="py-10 text-center text-gray-500 text-sm">
-                                        No automation activity logged yet. Once comments arrive, execution history will appear here.
+                                        No automation activity logged yet. Once users interact with your account, execution history will appear here.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredExecutions.map(exec => (
+                                executions.map(exec => (
                                     <tr key={exec.id} className="hover:bg-white/[0.02] transition-colors">
                                         <td className="py-4 px-4">
                                             <div className="flex items-center gap-3">
@@ -255,9 +277,7 @@ export default function Analytics() {
                                             </div>
                                         </td>
                                         <td className="py-4 px-4">
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-gray-300">
-                                                {exec.trigger_keyword ? `Comment to DM (${exec.trigger_keyword})` : "Comment to DM"}
-                                            </span>
+                                            {renderTriggerBadge(exec)}
                                         </td>
                                         <td className="py-4 px-4 text-xs text-gray-400">
                                             {exec.public_reply_sent ? <span className="text-emerald-400 font-medium">✓ Replied</span> : "-"}
@@ -276,6 +296,66 @@ export default function Analytics() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-white/10 text-xs text-gray-400">
+                    <div className="flex items-center gap-3">
+                        <span>
+                            Showing {totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalRecords)} of {totalRecords} activities
+                        </span>
+                        <select
+                            value={pageSize}
+                            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                            className="bg-black/40 border border-white/10 text-gray-300 rounded-lg px-2.5 py-1 focus:outline-none hover:border-white/20 transition-all cursor-pointer"
+                        >
+                            <option value={10}>10 per page</option>
+                            <option value={25}>25 per page</option>
+                            <option value={50}>50 per page</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-medium text-xs text-gray-300"
+                        >
+                            <ChevronLeft size={14} />
+                            Previous
+                        </button>
+
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                            .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                            .map((p, idx, arr) => {
+                                const prevPage = arr[idx - 1];
+                                const showEllipsis = prevPage && p - prevPage > 1;
+                                return (
+                                    <span key={p} className="flex items-center">
+                                        {showEllipsis && <span className="px-1 text-gray-600">...</span>}
+                                        <button
+                                            onClick={() => setCurrentPage(p)}
+                                            className={`w-7 h-7 rounded-lg text-xs font-semibold transition-all ${
+                                                currentPage === p
+                                                    ? 'bg-blue-500 text-white shadow-sm'
+                                                    : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    </span>
+                                );
+                            })}
+
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage >= totalPages}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-medium text-xs text-gray-300"
+                        >
+                            Next
+                            <ChevronRight size={14} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
