@@ -139,33 +139,13 @@ app.post('/api/webhook', async (req, res) => {
                                 const myUsername = myProfile.username?.toLowerCase();
                                 const currentSenderHandle = senderHandle.toLowerCase();
 
-                                if ((myId && senderId === myId) || (myUsername && (currentSenderHandle.includes(myUsername) || currentSenderHandle === myUsername))) {
+                                if ((myId && senderId === myId) || (entry.id && senderId === entry.id.toString()) || (myUsername && currentSenderHandle === myUsername)) {
                                     console.log(`[Skip] Comment ${commentId} posted by page's own account (@${senderHandle}). Skipping.`);
                                     continue;
                                 }
                             }
                             
                             console.log(`Received comment: "${commentText}" by @${senderHandle} on media: ${mediaId}`);
-
-                            // Atomically claim this comment before any side effect. A duplicate
-                            // webhook delivery returns no row and must never send another reply.
-                            let executionId;
-                            try {
-                                executionId = await claimExecution({
-                                    eventId: commentId,
-                                    senderId: `@${senderHandle}`,
-                                    mediaId,
-                                    text: commentText,
-                                    triggerType: 'post_comment'
-                                });
-                            } catch (e) {
-                                console.error(`Unable to claim comment ${commentId}:`, e.message);
-                                continue;
-                            }
-                            if (!executionId) {
-                                console.log(`[Idempotency] Comment ${commentId} was already claimed. Skipping.`);
-                                continue;
-                            }
 
                             const normalizedInput = normalizeText(commentText);
 
@@ -206,17 +186,32 @@ app.post('/api/webhook', async (req, res) => {
                             }
 
                             if (!matchedRule) {
-                                console.log(`No rule matched for comment ${commentId}`);
-                                if (executionId) {
-                                    await db.query(`UPDATE automation_executions SET status = 'not_matched', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [executionId]);
-                                }
+                                console.log(`No post automation matched comment ${commentId}; not storing activity.`);
+                                continue;
+                            }
+
+                            // Only matched automations are persisted. The atomic claim still
+                            // happens before the first public reply or DM side effect.
+                            let executionId;
+                            try {
+                                executionId = await claimExecution({
+                                    eventId: commentId,
+                                    senderId: `@${senderHandle}`,
+                                    mediaId,
+                                    text: commentText,
+                                    triggerType: 'post_comment'
+                                });
+                            } catch (e) {
+                                console.error(`Unable to claim comment ${commentId}:`, e.message);
+                                continue;
+                            }
+                            if (!executionId) {
+                                console.log(`[Idempotency] Comment ${commentId} was already claimed. Skipping.`);
                                 continue;
                             }
 
                             console.log(`Matched rule ${matchedRule.id} for comment ${commentId}`);
-                            if (executionId) {
-                                await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, executionId]);
-                            }
+                            await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, executionId]);
 
                             // Check public reply
                             let publicReplySent = false;
@@ -287,26 +282,13 @@ app.post('/api/webhook', async (req, res) => {
                             }
                             const triggerType = isStoryReply ? 'story_reply' : 'dm_keyword';
 
+                            const myProfile = await getCachedProfile();
+                            if ((myProfile?.id && senderId.toString() === myProfile.id.toString()) || (entry.id && senderId.toString() === entry.id.toString())) {
+                                console.log(`[Skip] Ignoring inbound message from the connected account (${senderId}).`);
+                                continue;
+                            }
+
                             console.log(`Received DM message: "${messageText}" from ${senderId}`);
-
-                            // Atomically claim the inbound message before any side effect.
-                            let dmExecId;
-                            try {
-                                dmExecId = await claimExecution({
-                                    eventId: mid,
-                                    senderId: `@user_${senderId.slice(-4)}`,
-                                    text: messageText,
-                                    triggerType
-                                });
-                            } catch (e) {
-                                console.error(`Unable to claim inbound DM ${mid}:`, e.message);
-                                continue;
-                            }
-                            if (!dmExecId) {
-                                console.log(`[Idempotency] Inbound DM ${mid} was already claimed. Skipping.`);
-                                continue;
-                            }
-
                             {
                                 const normalizedInput = normalizeText(messageText);
 
@@ -357,16 +339,31 @@ app.post('/api/webhook', async (req, res) => {
                                 }
 
                                 if (!matchedRule) {
-                                    if (dmExecId) {
-                                        await db.query(`UPDATE automation_executions SET status = 'not_matched', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [dmExecId]);
-                                    }
-                                } else {
-                                    console.log(`Matched rule ${matchedRule.id} for DM`);
-                                    if (dmExecId) {
-                                        await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, dmExecId]);
-                                    }
+                                    console.log(`No automation matched inbound DM ${mid}; not storing activity.`);
+                                    continue;
+                                }
 
-                                    try {
+                                let dmExecId;
+                                try {
+                                    dmExecId = await claimExecution({
+                                        eventId: mid,
+                                        senderId: `@user_${senderId.slice(-4)}`,
+                                        text: messageText,
+                                        triggerType
+                                    });
+                                } catch (e) {
+                                    console.error(`Unable to claim inbound DM ${mid}:`, e.message);
+                                    continue;
+                                }
+                                if (!dmExecId) {
+                                    console.log(`[Idempotency] Inbound DM ${mid} was already claimed. Skipping.`);
+                                    continue;
+                                }
+
+                                console.log(`Matched rule ${matchedRule.id} for DM`);
+                                await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, dmExecId]);
+
+                                try {
                                         let hasButton = false;
                                         if (matchedRule.opening_message && matchedRule.button_text) {
                                             hasButton = true;
@@ -385,7 +382,6 @@ app.post('/api/webhook', async (req, res) => {
                                         console.error("Error sending DM:", err.message);
                                         await markExecutionFailed(dmExecId, err);
                                         await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
-                                    }
                                 }
                             }
                         }
