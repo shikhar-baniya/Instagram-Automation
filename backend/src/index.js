@@ -93,6 +93,46 @@ async function markExecutionFailed(executionId, error, status = 'failed') {
     );
 }
 
+function redactSensitiveData(value) {
+    if (Array.isArray(value)) return value.map(redactSensitiveData);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+            key,
+            /access[_.-]?token|authorization|app[_.-]?secret|client[_.-]?secret/i.test(key) ? '[REDACTED]' : redactSensitiveData(entry)
+        ]));
+    }
+    return value;
+}
+
+async function logPayload({ executionId = null, commentId = null, direction, operation, method = null, url = null, requestPayload = null, responseStatus = null, responsePayload = null, metaError = null }) {
+    if (!db) return null;
+    const result = await db.query(
+        `INSERT INTO webhook_payload_logs
+            (execution_id, comment_id, direction, operation, request_method, request_url, request_payload, response_status, response_payload, meta_error_code, meta_error_subcode, meta_fbtrace_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10, $11, $12)
+         RETURNING id`,
+        [executionId, commentId?.toString() || null, direction, operation, method, url,
+         JSON.stringify(redactSensitiveData(requestPayload)), responseStatus, JSON.stringify(redactSensitiveData(responsePayload)),
+         metaError?.metaErrorCode?.toString() || null, metaError?.metaErrorSubcode?.toString() || null, metaError?.fbTraceId || null]
+    );
+    return result.rows[0]?.id || null;
+}
+
+function buildOutboundAudit(executionId, commentId) {
+    return entry => logPayload({
+        executionId,
+        commentId,
+        direction: 'outbound',
+        operation: entry.operation,
+        method: entry.method,
+        url: entry.url,
+        requestPayload: entry.payload,
+        responseStatus: entry.responseStatus,
+        responsePayload: entry.responsePayload,
+        metaError: entry.metaError
+    });
+}
+
 let cachedProfile = null;
 let lastProfileFetch = 0;
 async function getCachedProfile() {
@@ -125,6 +165,21 @@ app.post('/api/webhook', async (req, res) => {
                             const mediaId = commentValue.media ? commentValue.media.id : null;
                             const senderId = commentValue.from ? commentValue.from.id?.toString() : null;
                             const senderHandle = commentValue.from ? (commentValue.from.username || commentValue.from.id) : "user";
+
+                            // Keep the original Meta event for every incoming comment. Credentials are redacted before storage.
+                            let inboundLogId = null;
+                            try {
+                                inboundLogId = await logPayload({
+                                    commentId,
+                                    direction: 'inbound',
+                                    operation: 'comment_webhook',
+                                    method: 'POST',
+                                    url: '/api/webhook',
+                                    requestPayload: { webhook: body, comment: commentValue }
+                                });
+                            } catch (error) {
+                                console.error(`Failed to save inbound webhook payload for comment ${commentId}:`, error.message);
+                            }
 
                             // 0. Skip reply comments (e.g. public replies posted by page/bot or user replies to comments)
                             if (commentValue.parent_id) {
@@ -210,6 +265,11 @@ app.post('/api/webhook', async (req, res) => {
                                 continue;
                             }
 
+                            if (inboundLogId) {
+                                await db.query('UPDATE webhook_payload_logs SET execution_id = $1 WHERE id = $2', [executionId, inboundLogId]);
+                            }
+                            const outboundAudit = buildOutboundAudit(executionId, commentId);
+
                             console.log(`Matched rule ${matchedRule.id} for comment ${commentId}`);
                             await db.query(`UPDATE automation_executions SET status = 'matched', rule_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [matchedRule.id, executionId]);
 
@@ -217,7 +277,7 @@ app.post('/api/webhook', async (req, res) => {
                             let publicReplySent = false;
                             if (matchedRule.public_reply_text) {
                                 try {
-                                    await replyToComment(commentId, matchedRule.public_reply_text);
+                                    await replyToComment(commentId, matchedRule.public_reply_text, outboundAudit);
                                     publicReplySent = true;
                                 } catch (e) {
                                     console.error("Public reply error:", e.message);
@@ -235,9 +295,9 @@ app.post('/api/webhook', async (req, res) => {
                                 if (matchedRule.opening_message && matchedRule.button_text) {
                                     hasButton = true;
                                     const buttonPayload = executionId ? `RULE_${matchedRule.id}_EXEC_${executionId}` : `RULE_${matchedRule.id}`;
-                                    await sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload);
+                                    await sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload, outboundAudit);
                                 } else {
-                                    await sendPrivateReply(commentId, matchedRule.response_message);
+                                    await sendPrivateReply(commentId, matchedRule.response_message, outboundAudit);
                                 }
 
                                 const finalStatus = hasButton ? 'pending_button_click' : 'accepted_by_meta';
@@ -590,6 +650,23 @@ app.get('/api/executions', async (req, res) => {
     }
 });
 
+app.get('/api/executions/:id/payload-logs', async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT id, execution_id, comment_id, direction, operation, request_method, request_url,
+                    request_payload, response_status, response_payload, meta_error_code,
+                    meta_error_subcode, meta_fbtrace_id, created_at
+             FROM webhook_payload_logs
+             WHERE execution_id = $1
+             ORDER BY created_at ASC`,
+            [req.params.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/executions/stats', async (req, res) => {
     try {
         const totalAttempted = await db.query('SELECT COUNT(*) FROM automation_executions WHERE rule_id IS NOT NULL');
@@ -714,8 +791,20 @@ app.delete('/api/rules/:id', async (req, res) => {
     }
 });
 
+async function cleanupPayloadLogs() {
+    try {
+        const result = await db.query("DELETE FROM webhook_payload_logs WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '30 days'");
+        if (result.rowCount) console.log(`Removed ${result.rowCount} expired webhook payload log(s).`);
+    } catch (error) {
+        console.error('Failed to clean expired webhook payload logs:', error.message);
+    }
+}
+
 async function startServer() {
     db = await initDB();
+    await cleanupPayloadLogs();
+    const cleanupTimer = setInterval(cleanupPayloadLogs, 24 * 60 * 60 * 1000);
+    cleanupTimer.unref();
     app.listen(PORT, () => {
         console.log(`Backend is running on port ${PORT}`);
     });

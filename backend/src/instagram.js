@@ -64,6 +64,23 @@ function parseMetaError(error) {
 
 let cachedInstagramAccountId = process.env.INSTAGRAM_ACCOUNT_ID || null;
 
+function recordAudit(audit, entry) {
+    if (!audit) return;
+    Promise.resolve(audit(entry)).catch(error => {
+        console.error('Failed to save Meta API audit log:', error.message);
+    });
+}
+
+function getErrorRequestPayload(error) {
+    const data = error.config?.data;
+    if (typeof data !== 'string') return data || null;
+    try {
+        return JSON.parse(data);
+    } catch (_) {
+        return { unparsed_body: data };
+    }
+}
+
 async function getInstagramAccountId() {
     if (cachedInstagramAccountId) return cachedInstagramAccountId;
 
@@ -76,7 +93,7 @@ async function getInstagramAccountId() {
     return cachedInstagramAccountId;
 }
 
-async function sendPrivateReply(commentId, messageText) {
+async function sendPrivateReply(commentId, messageText, audit = null) {
     if (!PAGE_ACCESS_TOKEN) {
         throw new MetaApiError("Missing PAGE_ACCESS_TOKEN. Please add it to your .env file.", 401, null, null, false);
     }
@@ -99,10 +116,12 @@ async function sendPrivateReply(commentId, messageText) {
             }
         });
 
+        recordAudit(audit, { operation: 'private_reply', method: 'POST', url, payload, responseStatus: response.status, responsePayload: response.data });
         console.log(`Successfully sent reply to comment ${commentId}`);
         return response.data;
     } catch (error) {
         const parsed = parseMetaError(error);
+        recordAudit(audit, { operation: 'private_reply', method: 'POST', url: error.config?.url || null, payload: getErrorRequestPayload(error), responseStatus: error.response?.status || null, responsePayload: error.response?.data || null, metaError: parsed });
         console.error('Error sending private reply:', parsed.message);
         throw parsed;
     }
@@ -146,7 +165,7 @@ async function getPaginatedPosts(afterCursor) {
     }
 }
 
-async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ruleId, customPayload = null) {
+async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ruleId, customPayload = null, audit = null) {
     if (!PAGE_ACCESS_TOKEN) {
         throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
     }
@@ -173,10 +192,12 @@ async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ru
             }
         };
         const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
+        recordAudit(audit, { operation: 'private_reply_button', method: 'POST', url, payload, responseStatus: response.status, responsePayload: response.data });
         console.log(`Successfully sent opening DM with button to comment ${commentId}`);
         return response.data;
     } catch (error) {
         const parsed = parseMetaError(error);
+        recordAudit(audit, { operation: 'private_reply_button', method: 'POST', url: error.config?.url || null, payload: getErrorRequestPayload(error), responseStatus: error.response?.status || null, responsePayload: error.response?.data || null, metaError: parsed });
         console.error('Error sending private reply with button:', parsed.message);
         throw parsed;
     }
@@ -290,7 +311,7 @@ async function sendUrlButtonTemplate(recipientId, messageText, buttonText, urlSt
     }
 }
 
-async function replyToComment(commentId, messageText) {
+async function replyToComment(commentId, messageText, audit = null) {
     if (!PAGE_ACCESS_TOKEN) return;
     try {
         const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/${commentId}/replies`;
@@ -299,10 +320,14 @@ async function replyToComment(commentId, messageText) {
             access_token: PAGE_ACCESS_TOKEN
         };
         const response = await axios.post(url, payload);
+        recordAudit(audit, { operation: 'public_comment_reply', method: 'POST', url, payload: { message: messageText }, responseStatus: response.status, responsePayload: response.data });
         console.log(`Successfully publicly replied to comment ${commentId}`);
         return response.data;
     } catch (error) {
+        const parsed = parseMetaError(error);
+        recordAudit(audit, { operation: 'public_comment_reply', method: 'POST', url: error.config?.url || null, payload: { message: messageText }, responseStatus: error.response?.status || null, responsePayload: error.response?.data || null, metaError: parsed });
         console.error('Error replying to comment:', error.response ? error.response.data : error.message);
+        throw parsed;
     }
 }
 

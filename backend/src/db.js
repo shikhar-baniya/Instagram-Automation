@@ -80,6 +80,27 @@ async function initDB() {
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_comment_id ON automation_executions(comment_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_rule_id ON automation_executions(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_status ON automation_executions(status);
+
+                CREATE TABLE IF NOT EXISTS webhook_payload_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    execution_id INTEGER REFERENCES automation_executions(id) ON DELETE SET NULL,
+                    comment_id VARCHAR(255),
+                    direction VARCHAR(20) NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+                    operation VARCHAR(100) NOT NULL,
+                    request_method VARCHAR(10),
+                    request_url TEXT,
+                    request_payload JSONB,
+                    response_status INTEGER,
+                    response_payload JSONB,
+                    meta_error_code VARCHAR(50),
+                    meta_error_subcode VARCHAR(50),
+                    meta_fbtrace_id VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_webhook_payload_logs_execution_id ON webhook_payload_logs(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_webhook_payload_logs_comment_id ON webhook_payload_logs(comment_id);
+                CREATE INDEX IF NOT EXISTS idx_webhook_payload_logs_created_at ON webhook_payload_logs(created_at);
             `);
 
             await pool.query(`
