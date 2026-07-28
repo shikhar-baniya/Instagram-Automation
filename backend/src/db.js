@@ -87,7 +87,6 @@ async function initDB() {
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_error_subcode VARCHAR(50);
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_http_status INTEGER;
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_fbtrace_id VARCHAR(255);
-                ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_request_payload JSONB;
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {
