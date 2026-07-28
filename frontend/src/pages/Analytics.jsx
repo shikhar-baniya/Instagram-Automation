@@ -123,13 +123,23 @@ export default function Analytics() {
                         </span>
                     </span>
                 );
+            case 'unknown':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-300 border border-orange-500/20 shadow-sm group relative cursor-help">
+                        <HelpCircle size={12} />
+                        Unknown — do not retry
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2.5 bg-black/90 border border-orange-500/30 text-[11px] text-orange-100 rounded-lg shadow-xl z-20 font-normal leading-tight">
+                            Meta did not return a definitive delivery result. Retrying this comment could create a duplicate private reply.
+                        </span>
+                    </span>
+                );
             case 'failed':
                 return (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm group relative cursor-help">
                         <XCircle size={12} />
                         Failed
                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2.5 bg-black/90 border border-red-500/30 text-[11px] text-red-200 rounded-lg shadow-xl z-20 font-normal leading-tight">
-                            <strong>Meta Error {exec.meta_error_code ? `(Code ${[exec.meta_error_code, exec.meta_error_subcode].filter(Boolean).join(' / ')})` : ""}:</strong> {formatErrorTooltip(exec.error_message, exec.meta_error_code)}
+                            <strong>Meta Error {exec.meta_error_code ? `(Code ${[exec.meta_error_code, exec.meta_error_subcode].filter(Boolean).join(' / ')})` : ""}:</strong> {formatErrorTooltip(exec.error_message, exec.meta_error_code)}{exec.meta_fbtrace_id && <><br /><span className="text-red-300/80">Meta trace: {exec.meta_fbtrace_id}</span></>}
                         </span>
                     </span>
                 );

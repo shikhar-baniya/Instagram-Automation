@@ -79,17 +79,17 @@ async function claimExecution({ eventId, senderId, mediaId = null, text, trigger
     return result.rows[0]?.id || null;
 }
 
-async function markExecutionFailed(executionId, error) {
+async function markExecutionFailed(executionId, error, status = 'failed') {
     if (!executionId) return;
     await db.query(
         `UPDATE automation_executions
-         SET status = 'failed', error_message = $1, meta_error_message = $2,
-             meta_error_code = $3, meta_error_subcode = $4, meta_http_status = $5,
-             is_transient_error = $6, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $7`,
-        [error.message || 'Delivery rejected by Instagram API.', error.rawMessage || error.message || null,
+         SET status = $1, error_message = $2, meta_error_message = $3,
+             meta_error_code = $4, meta_error_subcode = $5, meta_http_status = $6,
+             meta_fbtrace_id = $7, is_transient_error = $8, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $9`,
+        [status, error.message || 'Delivery rejected by Instagram API.', error.rawMessage || error.message || null,
          error.metaErrorCode?.toString() || null, error.metaErrorSubcode?.toString() || null,
-         error.statusCode || null, error.isTransient || false, executionId]
+         error.statusCode || null, error.fbTraceId || null, error.isTransient || false, executionId]
     );
 }
 
@@ -235,9 +235,9 @@ app.post('/api/webhook', async (req, res) => {
                                 if (matchedRule.opening_message && matchedRule.button_text) {
                                     hasButton = true;
                                     const buttonPayload = executionId ? `RULE_${matchedRule.id}_EXEC_${executionId}` : `RULE_${matchedRule.id}`;
-                                    await sendWithRetry(() => sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload));
+                                    await sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload);
                                 } else {
-                                    await sendWithRetry(() => sendPrivateReply(commentId, matchedRule.response_message));
+                                    await sendPrivateReply(commentId, matchedRule.response_message);
                                 }
 
                                 const finalStatus = hasButton ? 'pending_button_click' : 'accepted_by_meta';
@@ -248,8 +248,9 @@ app.post('/api/webhook', async (req, res) => {
                                 await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
 
                             } catch (metaErr) {
-                                console.error(`Meta send failed for comment ${commentId}:`, metaErr.message);
-                                await markExecutionFailed(executionId, metaErr);
+                                const failureStatus = metaErr.isTransient ? 'unknown' : 'failed';
+                                console.error(`Meta private reply ${failureStatus} for comment ${commentId}:`, metaErr.message);
+                                await markExecutionFailed(executionId, metaErr, failureStatus);
                                 // Track failure on rule
                                 await db.query('UPDATE rules SET failed_dms = COALESCE(failed_dms, 0) + 1 WHERE id = $1', [matchedRule.id]);
                             }

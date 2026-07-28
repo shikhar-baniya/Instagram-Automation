@@ -4,7 +4,7 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GRAPH_API_VERSION = 'v25.0'; 
 
 class MetaApiError extends Error {
-    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient, rawMessage = null) {
+    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient, rawMessage = null, fbTraceId = null) {
         super(message);
         this.name = 'MetaApiError';
         this.statusCode = statusCode;
@@ -12,6 +12,7 @@ class MetaApiError extends Error {
         this.metaErrorSubcode = metaErrorSubcode;
         this.isTransient = isTransient;
         this.rawMessage = rawMessage || message;
+        this.fbTraceId = fbTraceId;
     }
 }
 
@@ -55,10 +56,24 @@ function parseMetaError(error) {
         // Transient errors: 5xx server errors, HTTP 429 / Meta Code 613 (rate limit), network timeouts
         const isTransient = statusCode >= 500 || statusCode === 429 || metaCode === 613 || metaCode === 4 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
         
-        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient, rawMessage);
+        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient, rawMessage, metaErr.fbtrace_id || null);
     }
     const isTransient = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || !error.response;
     return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient, error.message);
+}
+
+let cachedInstagramAccountId = process.env.INSTAGRAM_ACCOUNT_ID || null;
+
+async function getInstagramAccountId() {
+    if (cachedInstagramAccountId) return cachedInstagramAccountId;
+
+    const profile = await getUserProfile();
+    if (!profile?.id) {
+        throw new MetaApiError('Unable to resolve the connected Instagram account ID.', 500, null, null, true);
+    }
+
+    cachedInstagramAccountId = profile.id.toString();
+    return cachedInstagramAccountId;
 }
 
 async function sendPrivateReply(commentId, messageText) {
@@ -67,7 +82,8 @@ async function sendPrivateReply(commentId, messageText) {
     }
 
     try {
-        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
+        const instagramAccountId = await getInstagramAccountId();
+        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/${instagramAccountId}/messages`;
         const payload = {
             recipient: {
                 comment_id: commentId
@@ -135,7 +151,8 @@ async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ru
         throw new MetaApiError("Missing PAGE_ACCESS_TOKEN.", 401, null, null, false);
     }
     try {
-        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`;
+        const instagramAccountId = await getInstagramAccountId();
+        const url = `https://graph.instagram.com/${GRAPH_API_VERSION}/${instagramAccountId}/messages`;
         const payload = {
             recipient: { comment_id: commentId },
             message: {

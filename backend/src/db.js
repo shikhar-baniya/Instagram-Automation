@@ -69,6 +69,7 @@ async function initDB() {
                     meta_error_code VARCHAR(50),
                     meta_error_subcode VARCHAR(50),
                     meta_http_status INTEGER,
+                    meta_fbtrace_id VARCHAR(255),
                     is_transient_error BOOLEAN DEFAULT false,
                     retry_count INTEGER DEFAULT 0,
                     public_reply_sent BOOLEAN DEFAULT false,
@@ -85,6 +86,7 @@ async function initDB() {
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_error_message TEXT;
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_error_subcode VARCHAR(50);
                 ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_http_status INTEGER;
+                ALTER TABLE automation_executions ADD COLUMN IF NOT EXISTS meta_fbtrace_id VARCHAR(255);
             `);
             console.log('PostgreSQL Database connected and verified.');
         } catch (error) {
