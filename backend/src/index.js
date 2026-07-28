@@ -85,11 +85,11 @@ async function markExecutionFailed(executionId, error, status = 'failed') {
         `UPDATE automation_executions
          SET status = $1, error_message = $2, meta_error_message = $3,
              meta_error_code = $4, meta_error_subcode = $5, meta_http_status = $6,
-             meta_fbtrace_id = $7, is_transient_error = $8, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9`,
+             meta_fbtrace_id = $7, is_transient_error = $8, meta_request_payload = $9, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $10`,
         [status, error.message || 'Delivery rejected by Instagram API.', error.rawMessage || error.message || null,
          error.metaErrorCode?.toString() || null, error.metaErrorSubcode?.toString() || null,
-         error.statusCode || null, error.fbTraceId || null, error.isTransient || false, executionId]
+         error.statusCode || null, error.fbTraceId || null, error.isTransient || false, error.requestPayload ? JSON.stringify(error.requestPayload) : null, executionId]
     );
 }
 
@@ -232,17 +232,20 @@ app.post('/api/webhook', async (req, res) => {
                             // Attempt DM
                             try {
                                 let hasButton = false;
+                                let requestPayload = null;
                                 if (matchedRule.opening_message && matchedRule.button_text) {
                                     hasButton = true;
                                     const buttonPayload = executionId ? `RULE_${matchedRule.id}_EXEC_${executionId}` : `RULE_${matchedRule.id}`;
-                                    await sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload);
+                                    const result = await sendPrivateReplyWithButton(commentId, matchedRule.opening_message, matchedRule.button_text, matchedRule.id, buttonPayload);
+                                    requestPayload = result.payload;
                                 } else {
-                                    await sendPrivateReply(commentId, matchedRule.response_message);
+                                    const result = await sendPrivateReply(commentId, matchedRule.response_message);
+                                    requestPayload = result.payload;
                                 }
 
                                 const finalStatus = hasButton ? 'pending_button_click' : 'accepted_by_meta';
                                 if (executionId) {
-                                    await db.query(`UPDATE automation_executions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [finalStatus, executionId]);
+                                    await db.query(`UPDATE automation_executions SET status = $1, meta_request_payload = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`, [finalStatus, requestPayload ? JSON.stringify(requestPayload) : null, executionId]);
                                 }
                                 // Increment dms_sent ONLY on Meta success!
                                 await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
@@ -366,17 +369,20 @@ app.post('/api/webhook', async (req, res) => {
 
                                 try {
                                         let hasButton = false;
+                                        let requestPayload = null;
                                         if (matchedRule.opening_message && matchedRule.button_text) {
                                             hasButton = true;
                                             const buttonPayload = dmExecId ? `RULE_${matchedRule.id}_EXEC_${dmExecId}` : `RULE_${matchedRule.id}`;
-                                            await sendWithRetry(() => sendButtonTemplate(senderId, matchedRule.opening_message, matchedRule.button_text, buttonPayload));
+                                            const result = await sendWithRetry(() => sendButtonTemplate(senderId, matchedRule.opening_message, matchedRule.button_text, buttonPayload));
+                                            requestPayload = result.payload;
                                         } else {
-                                            await sendWithRetry(() => sendMessage(senderId, matchedRule.response_message));
+                                            const result = await sendWithRetry(() => sendMessage(senderId, matchedRule.response_message));
+                                            requestPayload = result.payload;
                                         }
 
                                         const finalStatus = hasButton ? 'pending_button_click' : 'accepted_by_meta';
                                         if (dmExecId) {
-                                            await db.query(`UPDATE automation_executions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [finalStatus, dmExecId]);
+                                            await db.query(`UPDATE automation_executions SET status = $1, meta_request_payload = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`, [finalStatus, requestPayload ? JSON.stringify(requestPayload) : null, dmExecId]);
                                         }
                                         await db.query('UPDATE rules SET dms_sent = dms_sent + 1 WHERE id = $1', [matchedRule.id]);
                                     } catch (err) {

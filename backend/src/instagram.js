@@ -4,7 +4,7 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GRAPH_API_VERSION = 'v25.0'; 
 
 class MetaApiError extends Error {
-    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient, rawMessage = null, fbTraceId = null) {
+    constructor(message, statusCode, metaErrorCode, metaErrorSubcode, isTransient, rawMessage = null, fbTraceId = null, requestPayload = null) {
         super(message);
         this.name = 'MetaApiError';
         this.statusCode = statusCode;
@@ -13,6 +13,7 @@ class MetaApiError extends Error {
         this.isTransient = isTransient;
         this.rawMessage = rawMessage || message;
         this.fbTraceId = fbTraceId;
+        this.requestPayload = requestPayload;
     }
 }
 
@@ -44,7 +45,7 @@ function formatMetaErrorMessage(metaCode, subcode, rawMsg) {
     return msg || "Delivery rejected by Instagram Graph API.";
 }
 
-function parseMetaError(error) {
+function parseMetaError(error, payload = null) {
     if (error.response && error.response.data && error.response.data.error) {
         const metaErr = error.response.data.error;
         const statusCode = error.response.status;
@@ -56,10 +57,10 @@ function parseMetaError(error) {
         // Transient errors: 5xx server errors, HTTP 429 / Meta Code 613 (rate limit), network timeouts
         const isTransient = statusCode >= 500 || statusCode === 429 || metaCode === 613 || metaCode === 4 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
         
-        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient, rawMessage, metaErr.fbtrace_id || null);
+        return new MetaApiError(formattedMessage, statusCode, metaCode, subcode, isTransient, rawMessage, metaErr.fbtrace_id || null, payload);
     }
     const isTransient = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || !error.response;
-    return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient, error.message);
+    return new MetaApiError(error.message || "Delivery rejected by Instagram API.", error.response ? error.response.status : 500, null, null, isTransient, error.message, null, payload);
 }
 
 let cachedInstagramAccountId = process.env.INSTAGRAM_ACCOUNT_ID || null;
@@ -100,9 +101,9 @@ async function sendPrivateReply(commentId, messageText) {
         });
 
         console.log(`Successfully sent reply to comment ${commentId}`);
-        return response.data;
+        return { data: response.data, payload };
     } catch (error) {
-        const parsed = parseMetaError(error);
+        const parsed = parseMetaError(error, payload);
         console.error('Error sending private reply:', parsed.message);
         throw parsed;
     }
@@ -174,9 +175,9 @@ async function sendPrivateReplyWithButton(commentId, messageText, buttonText, ru
         };
         const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent opening DM with button to comment ${commentId}`);
-        return response.data;
+        return { data: response.data, payload };
     } catch (error) {
-        const parsed = parseMetaError(error);
+        const parsed = parseMetaError(error, payload);
         console.error('Error sending private reply with button:', parsed.message);
         throw parsed;
     }
@@ -209,9 +210,9 @@ async function sendButtonTemplate(recipientId, messageText, buttonText, payloadS
         };
         const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent button template to ${recipientId}`);
-        return response.data;
+        return { data: response.data, payload };
     } catch (error) {
-        const parsed = parseMetaError(error);
+        const parsed = parseMetaError(error, payload);
         console.error('Error sending button template:', parsed.message);
         throw parsed;
     }
@@ -229,9 +230,9 @@ async function sendMessage(recipientId, messageText) {
         };
         const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent message to ${recipientId}`);
-        return response.data;
+        return { data: response.data, payload };
     } catch (error) {
-        const parsed = parseMetaError(error);
+        const parsed = parseMetaError(error, payload);
         console.error('Error sending message:', parsed.message);
         throw parsed;
     }
@@ -282,9 +283,9 @@ async function sendUrlButtonTemplate(recipientId, messageText, buttonText, urlSt
         };
         const response = await axios.post(url, payload, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
         console.log(`Successfully sent url button template to ${recipientId}`);
-        return response.data;
+        return { data: response.data, payload };
     } catch (error) {
-        const parsed = parseMetaError(error);
+        const parsed = parseMetaError(error, payload);
         console.error('Error sending url button template:', parsed.message);
         throw parsed;
     }
