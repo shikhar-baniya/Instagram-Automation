@@ -12,7 +12,9 @@ export default function StoryReplyForm({ formData, setFormData }) {
         </h3>
         
         <div className="space-y-3">
-          <label className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'specific' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
+          <label 
+            onClick={() => setFormData({...formData, target_story_type: 'specific'})}
+            className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'specific' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
             <span className="font-medium text-white/90">A specific story</span>
             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${formData.target_story_type === 'specific' ? 'border-blue-500 bg-blue-500' : 'border-white/30'}`}>
               {formData.target_story_type === 'specific' && <div className="w-2 h-2 bg-white rounded-full"></div>}
@@ -26,14 +28,18 @@ export default function StoryReplyForm({ formData, setFormData }) {
             </div>
           )}
 
-          <label className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'next' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
+          <label 
+            onClick={() => setFormData({...formData, target_story_type: 'next'})}
+            className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'next' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
             <span className="font-medium text-white/90">Next story</span>
             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${formData.target_story_type === 'next' ? 'border-blue-500 bg-blue-500' : 'border-white/30'}`}>
               {formData.target_story_type === 'next' && <div className="w-2 h-2 bg-white rounded-full"></div>}
             </div>
           </label>
 
-          <label className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
+          <label 
+            onClick={() => setFormData({...formData, target_story_type: 'any'})}
+            className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.target_story_type === 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
             <span className="font-medium text-white/90">Any story</span>
             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${formData.target_story_type === 'any' ? 'border-blue-500 bg-blue-500' : 'border-white/30'}`}>
               {formData.target_story_type === 'any' && <div className="w-2 h-2 bg-white rounded-full"></div>}
@@ -51,7 +57,9 @@ export default function StoryReplyForm({ formData, setFormData }) {
         </h3>
         
         <div className="space-y-3">
-          <label className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.match_type !== 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
+          <label 
+            onClick={() => setFormData({...formData, match_type: formData.match_type === 'any' ? 'exact' : formData.match_type})}
+            className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.match_type !== 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
             <span className="font-medium text-white/90">A specific keyword</span>
             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${formData.match_type !== 'any' ? 'border-blue-500 bg-blue-500' : 'border-white/30'}`}>
               {formData.match_type !== 'any' && <div className="w-2 h-2 bg-white rounded-full"></div>}
@@ -72,7 +80,9 @@ export default function StoryReplyForm({ formData, setFormData }) {
             </div>
           )}
 
-          <label className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.match_type === 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
+          <label 
+            onClick={() => setFormData({...formData, match_type: 'any'})}
+            className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300 ${formData.match_type === 'any' ? 'border-blue-500/50 bg-blue-500/5 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'border-white/10 hover:bg-white/5 bg-black/20'}`}>
             <span className="font-medium text-white/90">Any word</span>
             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${formData.match_type === 'any' ? 'border-blue-500 bg-blue-500' : 'border-white/30'}`}>
               {formData.match_type === 'any' && <div className="w-2 h-2 bg-white rounded-full"></div>}
